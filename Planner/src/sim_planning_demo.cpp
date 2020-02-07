@@ -17,6 +17,7 @@
 #include <visualization_msgs/Marker.h>
 #include <quadrotor_msgs/PositionCommand.h>
 #include <quadrotor_msgs/PolynomialTrajectory.h>
+#include <std_msgs/Int8.h>
 
 #include "pointcloudTraj/mosek.h"
 #include "pointcloudTraj/backward.hpp"
@@ -42,6 +43,7 @@ ros::Publisher _vis_target_points;
 ros::Publisher _vis_traj_points;
 ros::Publisher _vis_commit_traj_points;
 ros::Publisher _vis_stop_traj_points;
+ros::Publisher _status_code_pub;
 ros::Subscriber _odom_sub;
 ros::Subscriber _dest_pts_sub;
 ros::Subscriber _map_sub;
@@ -102,6 +104,12 @@ void visRrt(vector<NodePtr> nodes);
 void getPosFromBezier(const MatrixXd & polyCoeff,  const double & t_now, const int & seg_now, Vector3d & ret);
 void getStateFromBezier(const MatrixXd & polyCoeff,  const double & t_now, const int & seg_now, VectorXd & ret);
 
+void sendStatusCode(int code) {
+    std_msgs::Int8 int_msg;
+    int_msg.data = code;
+    _status_code_pub.publish(int_msg);
+}
+
 void rcvWaypointsCallBack(const nav_msgs::Path & wp)
 {   
     if(wp.poses[0].pose.position.z < 0.0)
@@ -158,6 +166,7 @@ void rcvPointCloudCallBack(const sensor_msgs::PointCloud2 & pointcloud_map )
     if(checkSafeTrajectory(_stop_time))
     {
         ROS_WARN("[Demo] Collision Occur, Stop");
+        sendStatusCode(3);
         quadrotor_msgs::PolynomialTrajectory traj;
         traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE;
         _traj_pub.publish(traj);
@@ -252,6 +261,7 @@ int trajGeneration(MatrixXd path, VectorXd radius, double time_odom_delay)
     quadrotor_msgs::PolynomialTrajectory traj;
     if(_PolyCoeff.rows() == 3 && _PolyCoeff.cols() == 3){
         ROS_WARN("[Demo] Cannot find a feasible and optimal solution, somthing wrong with the mosek solver ... ");
+        sendStatusCode(2);
         traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE;
         _traj_pub.publish(traj);
         _is_traj_exist     = false;
@@ -321,6 +331,7 @@ void planInitialTraj()
     tie(_Path, _Radius) = _rrtPathPlaner.getPath();
     if( _rrtPathPlaner.getPathExistStatus() == false ){
         ROS_WARN("[Demo] Can't find a path, mission stall, please reset the target");
+        sendStatusCode(1);
         quadrotor_msgs::PolynomialTrajectory traj;
         traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE;
         _traj_pub.publish(traj);
@@ -331,6 +342,9 @@ void planInitialTraj()
         if( trajGeneration( _Path, _Radius, _path_time ) == 1 ){   
             _commit_target = getCommitedTarget();
             _rrtPathPlaner.resetRoot(_commit_target);
+            if (_rrtPathPlaner.getGlobalNaviStatus()) {
+                sendStatusCode(0);
+            }
             visBezierTrajectory(_PolyCoeff);
             visCommitTraj(_PolyCoeff);
             visCtrlPoint( _PolyCoeff );
@@ -359,7 +373,10 @@ void planIncrementalTraj()
             _plan_traj_time = ros::Time::now();
             if( trajGeneration( _Path, _Radius, (_plan_traj_time - _rcv_odom_time).toSec() ) == 1) { // Generate a new trajectory sucessfully.
                 _commit_target = getCommitedTarget();   
-                _rrtPathPlaner.resetRoot(_commit_target);  
+                _rrtPathPlaner.resetRoot(_commit_target);
+                if (_rrtPathPlaner.getGlobalNaviStatus()) {
+                    sendStatusCode(0);
+                }
 
                 ros::Time time_1 = ros::Time::now();
                 visBezierTrajectory(_PolyCoeff);
@@ -467,6 +484,8 @@ int main (int argc, char** argv)
     _vis_traj_points        = node_handle.advertise<sensor_msgs::PointCloud2>("trajectory_points",          1);
     _vis_commit_traj_points = node_handle.advertise<sensor_msgs::PointCloud2>("trajectory_commit_points",   1);
     _vis_stop_traj_points   = node_handle.advertise<sensor_msgs::PointCloud2>("trajectory_stop_points",     1);
+
+    _status_code_pub   = node_handle.advertise<std_msgs::Int8>("status_code",     1);
 
     _planning_timer         = node_handle.createTimer(ros::Duration(1.0 / _planning_rate), planningCallBack);
 

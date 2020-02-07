@@ -69,3 +69,23 @@ add_executable ( odom_generator
     src/odom_generator.cpp )
 target_link_libraries( odom_generator
     ${catkin_LIBRARIES} )
+
+add_executable(trajectory_keeper
+        src/trajectory_keeper.cpp)
+
+target_link_libraries(trajectory_keeper
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES})
+
+add_executable(status_inspector
+        src/status_inspector.cpp)
+
+target_link_libraries(status_inspector
+        ${catkin_LIBRARIES})
+
+add_executable(trajectories_comparison
+        src/trajectories_comparison.cpp)
+
+target_link_libraries(trajectories_comparison
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES})

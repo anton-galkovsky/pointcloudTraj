@@ -115,6 +115,20 @@
         <param name="end_y"   value="$(arg end_y)" />
 </node>
 
+<node type="trajectory_keeper" name="trajectory_keeper" pkg="pointcloudTraj" output="screen">
+        <remap from="~trajectory_commit_points"         to="/sim_planning_demo/trajectory_commit_points"/>
+        <remap from="~current_trajectory"               to="/trajectory_keeper/current_trajectory"/>
+
+        <param name="files/trajs_output_archive_file"   value="/home/galanton/catkin_ws/trajectory_archive"/>
+        <param name="files/var_traj_length_file"        value="/home/galanton/catkin_ws/traj_length"/>
+</node>
+
+<node type="status_inspector" name="status_inspector" pkg="pointcloudTraj" output="screen" required="true">
+        <remap from="~status_code"                      to="/sim_planning_demo/status_code"/>
+
+        <param name="files/var_exit_code_file"          value="/home/galanton/catkin_ws/exit_code"/>
+</node>
+
  <node name="rviz" pkg="rviz" type="rviz" output="screen"
        args="-d $(find pointcloudTraj)/launch/rviz_config/rviz_config.rviz"> 
 </node>

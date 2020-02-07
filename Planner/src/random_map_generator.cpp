@@ -53,38 +53,54 @@ void RandomMapGeneration()
    rand_w = uniform_real_distribution<double>(_w_l, _w_h);
    rand_h = uniform_real_distribution<double>(_h_l, _h_h);
 
-   for(int i = 0; i < _obsNum; i ++){
-      double x, y; 
-      x    = rand_x(eng);
-      y    = rand_y(eng);
-
-      double w, h;
-      w    = rand_w(eng);
-
-      int widNum = ceil(w/_resolution);
-
-      for(int r = -widNum / 2; r < widNum / 2; r ++ )
-         for(int s = -widNum / 2; s < widNum / 2; s ++ ){
-            h    = rand_h(eng);  
-            //if(h < 1.0) continue;
-            int heiNum = ceil(h/_resolution);
-            for(int t = 0; t < heiNum; t ++ ){
-               pt_random.x = x + r * _resolution;
-               pt_random.y = y + s * _resolution;
-               pt_random.z = t * _resolution;
-               
-               if(sqrt( pow(pt_random.x - _init_x, 2) + pow(pt_random.y - _init_y, 2) ) < 2.0 
-               || sqrt( pow(pt_random.x - _end_x,  2) + pow(pt_random.y - _end_y,  2) ) < 2.0 ) 
-                  continue;
-               
-               cloudMap.points.push_back( pt_random );
-            }
-         }
-   }
-
-   cloudMap.width = cloudMap.points.size();
+//   for(int i = 0; i < _obsNum; i ++){
+//      double x, y;
+//      x    = rand_x(eng);
+//      y    = rand_y(eng);
+//
+//      double w, h;
+//      w    = rand_w(eng);
+//
+//      int widNum = ceil(w/_resolution);
+//
+//      for(int r = -widNum / 2; r < widNum / 2; r ++ )
+//         for(int s = -widNum / 2; s < widNum / 2; s ++ ){
+//            h    = rand_h(eng);
+//            //if(h < 1.0) continue;
+//            int heiNum = ceil(h/_resolution);
+//            for(int t = 0; t < heiNum; t ++ ){
+//               pt_random.x = x + r * _resolution;
+//               pt_random.y = y + s * _resolution;
+//               pt_random.z = t * _resolution;
+//
+//               if(sqrt( pow(pt_random.x - _init_x, 2) + pow(pt_random.y - _init_y, 2) ) < 2.0
+//               || sqrt( pow(pt_random.x - _end_x,  2) + pow(pt_random.y - _end_y,  2) ) < 2.0 )
+//                  continue;
+//
+//               cloudMap.points.push_back( pt_random );
+//            }
+//         }
+//   }
+//
+//   cloudMap.width = cloudMap.points.size();
    cloudMap.height = 1;
    cloudMap.is_dense = true;
+
+    ifstream fin("/home/galanton/catkin_ws/generated_map", std::ios::in);
+    fin >> cloudMap.width;
+    pcl::PointXYZ point;
+    for (int i = 0; i < cloudMap.width; i++) {
+        fin >> point.x >> point.y >> point.z;
+        cloudMap.points.push_back(point);
+    }
+    fin.close();
+
+//    ofstream fout("/home/galanton/catkin_ws/generated_map", std::ios::out);
+//    fout << cloudMap.width << "\n";
+//    for (pcl::PointXYZ point : cloudMap.points) {
+//        fout << point.x << " " << point.y << " " << point.z << "\n";
+//    }
+//    fout.close();
 
    ROS_WARN("[Map Generator] Finished generate random map ");
    //cout<<cloudMap.size()<<endl;

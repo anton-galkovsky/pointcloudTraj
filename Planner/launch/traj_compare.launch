@@ -1,0 +1,49 @@
+<launch>
+
+    <arg name="init_x" default="-45.0"/>
+    <arg name="init_y" default="-45.0"/>
+
+    <arg name="end_x" default=" 30.0"/>
+    <arg name="end_y" default=" 30.0"/>
+
+    <node type="random_map" name="random_map" pkg="pointcloudTraj" output="screen">
+        <remap from="~odometry" to="/odom/fake_odom"/>
+
+        <param name="mapBoundary/lower_x" value="-50.0"/>
+        <param name="mapBoundary/upper_x" value=" 50.0"/>
+        <param name="mapBoundary/lower_y" value="-50.0"/>
+        <param name="mapBoundary/upper_y" value=" 50.0"/>
+        <param name="mapBoundary/lower_z" value="  0.0"/>
+        <param name="mapBoundary/upper_z" value="  3.0"/>
+
+        <param name="ObstacleShape/lower_rad" value=" 0.6"/>
+        <param name="ObstacleShape/upper_rad" value=" 3.2"/>
+        <param name="ObstacleShape/lower_hei" value=" 1.0"/>
+        <param name="ObstacleShape/upper_hei" value=" 10.0"/>
+
+        <param name="sensing_radius"    value=" 20.0"/>
+        <param name="ObstacleNum"       value=" 600"/>
+        <param name="Resolution"        value=" 0.2"/>
+        <param name="SensingRate"       value=" 10.0"/>
+        <param name="Origin_clearance"  value=" 2.0"/>
+        <param name="fov_vertical"      value=" 30.0"/>
+
+        <param name="init_x"    value="$(arg init_x)"/>
+        <param name="init_y"    value="$(arg init_y)"/>
+        <param name="end_x"     value="$(arg end_x)"/>
+        <param name="end_y"     value="$(arg end_y)"/>
+    </node>
+
+    <node type="trajectories_comparison" name="trajectories_comparison" pkg="pointcloudTraj" output="screen">
+        <remap from="~trajectories_1"                   to="/trajectories_comparison/trajectories_1"/>
+        <remap from="~trajectories_2"                   to="/trajectories_comparison/trajectories_2"/>
+
+        <param name="files/trajs_input_archive_1_file"  value="/home/galanton/catkin_ws/trajectory_bm300"/>
+        <param name="files/trajs_input_archive_2_file"  value="/home/galanton/catkin_ws/trajectory_archive"/>
+    </node>
+
+    <node name="rviz" pkg="rviz" type="rviz" output="screen"
+          args="-d $(find pointcloudTraj)/launch/rviz_config/rviz_traj_compare_config.rviz">
+    </node>
+
+</launch>
