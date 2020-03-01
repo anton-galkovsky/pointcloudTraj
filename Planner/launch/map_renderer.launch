@@ -1,0 +1,12 @@
+<launch>
+    <node type="map_controller" name="map_controller" pkg="pointcloudTraj" output="screen">
+        <param name="sense_rate"     value=" 2.0"/>
+        <param name="image_width"    value="1280"/>
+        <param name="image_height"   value=" 960"/>
+        <param name="fov_horizontal" value="  90"/>
+    </node>
+
+<!--    <node name="rviz" pkg="rviz" type="rviz" output="screen"-->
+<!--          args="-d $(find pointcloudTraj)/launch/rviz_config/rviz_map_renderer_config.rviz">-->
+<!--    </node>-->
+</launch>

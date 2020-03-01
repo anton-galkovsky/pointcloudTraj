@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 project(pointcloudTraj)
 
 set(CMAKE_VERBOSE_MAKEFILE "true")
-set(CMAKE_BUILD_TYPE "Release")
-set(CMAKE_CXX_FLAGS "-std=c++11 -march=native -DEIGEN_DONT_PARALLELIZE ${CMAKE_CXX_FLAGS} -g -O3 -Wall")
+set(CMAKE_BUILD_TYPE "Debug")
+set(CMAKE_CXX_FLAGS "-std=c++11 -march=native -DEIGEN_DONT_PARALLELIZE ${CMAKE_CXX_FLAGS} -g -O0 -Wall")
 
 find_package(catkin REQUIRED COMPONENTS
     roscpp
@@ -15,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
     kdtree)
 
 find_package(Eigen3 REQUIRED)
-find_package(PCL REQUIRED)
+find_package(PCL 1.10 EXACT REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
@@ -87,5 +87,13 @@ add_executable(trajectories_comparison
         src/trajectories_comparison.cpp)
 
 target_link_libraries(trajectories_comparison
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES})
+
+add_executable(map_controller
+        src/map_controller.cpp
+        src/map_observer.cpp)
+
+target_link_libraries(map_controller
         ${catkin_LIBRARIES}
         ${PCL_LIBRARIES})
