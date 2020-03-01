@@ -6,7 +6,6 @@
 class triangle_shape {
 public:
     explicit triangle_shape(const std::vector<Eigen::Vector3f> &sp_points);
-    int get_right_border(int y);
 
     std::vector<Eigen::Vector3f> spatial_points;
     std::vector<Eigen::Vector3f> image_points;

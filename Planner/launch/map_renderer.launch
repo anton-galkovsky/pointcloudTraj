@@ -4,6 +4,8 @@
         <param name="image_width"    value="1280"/>
         <param name="image_height"   value=" 960"/>
         <param name="fov_horizontal" value="  90"/>
+
+        <param name="files/rendered_image" value="/home/galanton/catkin_ws/view.png"/>
     </node>
 
 <!--    <node name="rviz" pkg="rviz" type="rviz" output="screen"-->

@@ -1,4 +1,7 @@
 #include <cmath>
+#include <tuple>
+#include <list>
+#include <algorithm>
 #include <iostream>
 #include "pointcloudTraj/map_observer.h"
 
@@ -7,18 +10,6 @@ triangle_shape::triangle_shape(const std::vector<Eigen::Vector3f> &sp_points) {
     assert(sp_points.size() == 3);
     spatial_points = sp_points;
     normal = (spatial_points[1] - spatial_points[0]).cross(spatial_points[2] - spatial_points[1]);
-}
-
-int triangle_shape::get_right_border(int y) {
-    double x = -100000;
-    for (int i = 0; i < 3; i++) {
-        int next_i = (i + 1) % 3;
-        if ((image_points[next_i][1] - y) * (image_points[i][1] - y) <= 0) {
-            x = std::max(x, image_points[i][0] + 1.0 * (y - image_points[i][1])
-                / (image_points[next_i][1] - image_points[i][1]) * (image_points[next_i][0] - image_points[i][0]));
-        }
-    }
-    return (int) round(x);
 }
 
 
@@ -31,7 +22,7 @@ map_observer::map_observer(const std::vector<std::vector<Eigen::Vector3f>> &shap
     camera_axis_y = Eigen::Vector3f(0, 1, 0);
     camera_axis_z = Eigen::Vector3f(0, 0, 1);
     for (const auto &shape : shapes_) {
-        shapes.emplace_back(triangle_shape(shape));
+        shapes.emplace_back(shape);
     }
 }
 
@@ -44,7 +35,7 @@ void map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
 
 float *map_observer::render_to_image() {
     auto *image = new float[image_width * image_height];
-    auto *object_stacks = new std::vector<std::pair<triangle_shape *, double>>[image_width * image_height];
+    auto *line_segments = new std::map<triangle_shape *, float[4]>[image_height];
 
     for (auto &shape : shapes) {
         if (shape.normal.dot(camera_axis_z) < 0) {
@@ -52,9 +43,11 @@ float *map_observer::render_to_image() {
                 Eigen::Vector3f delta = point - camera_translation;
                 float distance = delta.norm();
                 float scale = focal_distance / distance;
-                int img_x = (int) round(delta.dot(camera_axis_x) * scale * image_width + image_width / 2.0);
-                int img_y = (int) round(delta.dot(camera_axis_y) * scale * image_width + image_height / 2.0);
-                shape.image_points.emplace_back(Eigen::Vector3f(img_x, img_y, distance));                               // outside screen?
+                int img_x = (int) round(delta.dot(camera_axis_x) * scale * (float) image_width
+                                        + image_width / 2.0);
+                int img_y = (int) round(delta.dot(camera_axis_y) * scale * (float) image_width
+                                        + image_height / 2.0);
+                shape.image_points.emplace_back(img_x, img_y, distance);                                                // outside screen?
 //                std::cout << "point: (" << img_x << ", " << img_y << ", " << distance << ")\n";
             }
             int image_points_size = shape.image_points.size();
@@ -67,68 +60,172 @@ float *map_observer::render_to_image() {
                 double x = x0;
                 double y = y0;
                 double z = shape.image_points[i][2];
+                bool step_on_x;
                 if (abs(x1 - x0) < abs(y1 - y0)) {
                     x_incr = 1.0 * (x1 - x0) / abs(y1 - y0);
                     y_incr = (y1 > y0) ? 1 : -1;
                     z_incr = (shape.image_points[(i + 1) % image_points_size][2] - z) / abs(y1 - y0);
-                    while (y != y1) {
-                        object_stacks[(int) (round(y) * image_width + round(x))]
-                                .emplace_back(std::make_pair(&shape, z));
-                        x += x_incr;
-                        y += y_incr;
-                        z += z_incr;
-                    }
+                    step_on_x = false;
                 } else {
                     x_incr = (x1 > x0) ? 1 : -1;
                     y_incr = 1.0 * (y1 - y0) / abs(x1 - x0);
                     z_incr = (shape.image_points[(i + 1) % image_points_size][2] - z) / abs(x1 - x0);
-                    while (x != x1) {
-                        object_stacks[(int) (round(y) * image_width + round(x))]
-                                .emplace_back(std::make_pair(&shape, z));
-                        x += x_incr;
-                        y += y_incr;
+                    step_on_x = true;
+                }
+                while ((step_on_x && x != x1) || (!step_on_x && y != y1)) {
+                    auto &segm = line_segments[(int) round(y)];
+                    if (segm.find(&shape) == segm.end()) {
+                        auto &segm_it = segm[&shape];
+                        segm_it[0] = segm_it[2] = (float) round(x);
+                        segm_it[1] = segm_it[3] = (float) z;
+                    } else {
+                        auto &segm_it = segm[&shape];
+                        if (x < segm_it[0]) {
+                            segm_it[0] = (float) round(x);
+                            segm_it[1] = (float) z;
+                        }
+                        if (x > segm_it[2]) {
+                            segm_it[2] = (float) round(x);
+                            segm_it[3] = (float) z;
+                        }
+                    }
+
+                    x += x_incr;
+                    y += y_incr;
+                    z += z_incr;
+                }
+            }
+        }
+    }
+
+    for (int y = 0; y < image_height; y++) {
+//        std::cout << "\n" << y;
+        std::vector<std::tuple<int, float, int, float>> segments;
+        if (line_segments[y].empty()) {
+            continue;
+        }
+        for (auto segment : line_segments[y]) {
+            segments.emplace_back(segment.second[0], segment.second[1], segment.second[2], segment.second[3]);
+        }
+        std::sort(segments.begin(), segments.end());
+
+
+        std::list<std::tuple<int, float, int, float> *> segments_list;
+        auto *cur_segment = &segments[0];
+        segments_list.push_front(cur_segment);
+        int x_cur = std::get<0>(segments[0]);                                                      //really this?
+        int x_next;
+        float z = std::get<1>(segments[0]);
+        float z_incr = 0;
+        int next_segment_idx = 1;
+        int state = 0;
+        int segments_size = segments.size();
+        bool ended = false;
+
+        while (!ended) {                                                                                // if size == 1?
+//            std::cout << state;
+            switch (state) {
+                case 0:  // just started
+                    if (next_segment_idx < segments_size
+                        && std::get<0>(segments[next_segment_idx])
+                           < std::get<2>(*cur_segment) + 1) {
+                        x_next = std::get<0>(segments[next_segment_idx]);
+                        state = 1;
+                    } else {
+                        x_next = std::get<2>(*cur_segment) + 1;
+                        state = 2;
+                    }
+
+                    z_incr = (std::get<3>(segments[next_segment_idx - 1]) - z)
+                             / (float) (std::get<2>(segments[next_segment_idx - 1]) - x_cur);
+                    for (; x_cur < x_next; x_cur++) {
+                        image[y * image_width + x_cur] = z;
                         z += z_incr;
+                    }
+                    break;
+                case 1: { // found another segment
+                    bool changed = std::get<1>(segments[next_segment_idx]) < z;
+                    if (changed) {
+                        z = std::get<1>(segments[next_segment_idx]);
+                        cur_segment = &segments[next_segment_idx];
+                    }
+                    segments_list.push_front(&segments[next_segment_idx]);
+                    next_segment_idx++;
+
+                    if (next_segment_idx < segments_size
+                        && std::get<0>(segments[next_segment_idx])
+                           < std::get<2>(*cur_segment) + 1) {
+                        x_next = std::get<0>(segments[next_segment_idx]);
+                        state = 1;
+                    } else {
+                        x_next = std::get<2>(*cur_segment) + 1;
+                        state = 2;
+                    }
+
+                    if (changed) {
+                        z_incr = (std::get<3>(segments[next_segment_idx - 1]) - z)
+                                 / (float) (std::get<2>(segments[next_segment_idx - 1]) - x_cur);
+                    }
+
+                    for (; x_cur < x_next; x_cur++) {
+                        image[y * image_width + x_cur] = z;
+                        z += z_incr;
+                    }
+                }
+                    break;
+                case 2: { // ended segment
+                    cur_segment = nullptr;
+                    z = 1000000;
+                    for (auto it = segments_list.begin(); it != segments_list.end(); ++it) {
+                        if (std::get<2>(**it) < x_cur) {
+                            it = segments_list.erase(it);
+                        } else {
+                            float z_incr_ = (std::get<3>(**it) - std::get<1>(**it))
+                                            / (float) (std::get<2>(**it) - std::get<0>(**it));
+                            float z_ = std::get<1>(**it) + (float) (x_cur - std::get<0>(**it)) * z_incr_;
+                            if (z_ < z) {
+                                z = z_;
+                                z_incr = z_incr_;
+                                cur_segment = *it;
+                            }
+                        }
+                    }
+
+                    if (cur_segment != nullptr) {
+                        if (next_segment_idx < segments_size
+                            && std::get<0>(segments[next_segment_idx])
+                               < std::get<2>(*cur_segment) + 1) {
+                            x_next = std::get<0>(segments[next_segment_idx]);
+                            state = 1;
+                        } else {
+                            x_next = std::get<2>(*cur_segment) + 1;
+                            state = 2;
+                        }
+
+                        for (; x_cur < x_next; x_cur++) {
+                            image[y * image_width + x_cur] = z;
+                            z += z_incr;
+                        }
+                    } else {
+                        if (next_segment_idx < segments_size) {
+                            cur_segment = &segments[next_segment_idx];
+                            segments_list.push_back(cur_segment);
+                            x_cur = std::get<0>(*cur_segment);
+                            state = 1;
+                        } else {
+                            ended = true;
+                        }
                     }
                 }
             }
         }
     }
 
-    triangle_shape *cur = nullptr;
-    double z_cur = 0, z_incr = 0;
-    int x_delta = 0;
-    for (int idx = 0; idx < image_width * image_height; idx++) {
-        if (cur == nullptr && object_stacks[idx].empty()) {
-            image[idx] = INFINITY;
-        } else if (cur == nullptr && !object_stacks[idx].empty()) {
-            cur = object_stacks[idx][0].first;
-            int right_border = cur->get_right_border(idx / image_width);
-            x_delta = right_border - idx % image_width;
-            while (right_border < image_width - 1 && !object_stacks[idx + x_delta + 1].empty()
-                   && object_stacks[idx + x_delta + 1][0].first == cur) {
-                right_border++;
-                x_delta++;
+    for (int i = 0; i < image_width; i++) {
+        for (int j = 0; j < image_height; j++) {
+            if (image[j * image_width + i] < 0.001) {
+                image[j * image_width + i] = INFINITY;
             }
-            if (x_delta != 0) {
-                z_incr = (object_stacks[idx + x_delta][0].second - object_stacks[idx][0].second) / x_delta;
-                z_cur = object_stacks[idx][0].second;
-                image[idx] = z_cur;
-                z_cur += z_incr;
-                x_delta--;
-            } else {
-                image[idx] = object_stacks[idx][0].second;
-                cur = nullptr;
-            }
-        } else if (cur != nullptr && x_delta == 0) {
-            assert(object_stacks[idx][0].first == cur);
-            image[idx] = z_cur;
-            cur = nullptr;
-        } else if (cur != nullptr) {
-            image[idx] = z_cur;
-            z_cur += z_incr;
-            x_delta--;
-        } else {
-            assert(1 == 0);
         }
     }
 
@@ -141,9 +238,5 @@ float *map_observer::render_to_image() {
 //    }
 //    fclose(fout);
 
-//    for (auto shape : shapes)
-//        for (auto point : shape.image_points) {
-//            image[point[1] * image_width + point[0]] = 1;
-//        }
     return image;
 }

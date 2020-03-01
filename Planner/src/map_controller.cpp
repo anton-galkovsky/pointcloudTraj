@@ -27,11 +27,11 @@ int image_width, image_height, fov_horizontal;
 
 
 void generate_image() {
-    float sqrt2_2 = M_SQRT2 / 2;
-    Eigen::Vector3f translation(-2, -2, 0.7);
+    float sqrt3_2 = (float) sqrt(3) / 2;
+    Eigen::Vector3f translation(-4, -6, 2);
     Eigen::Matrix3f rotation;
-    rotation <<   sqrt2_2,    0,  sqrt2_2,
-                 -sqrt2_2,    0,  sqrt2_2,
+    rotation <<   sqrt3_2,    0,      0.5,
+                     -0.5,    0,  sqrt3_2,
                         0,   -1,        0;
 
     Eigen::Affine3f sensorPose = Eigen::Affine3f::Identity();
@@ -65,11 +65,29 @@ void generate_image() {
 }
 
 void generate_map() {
-    vector<Eigen::Vector3f> shape;
-    shape.emplace_back(Eigen::Vector3f(-0.5, 0.5, 0));
-    shape.emplace_back(Eigen::Vector3f(30, 2, -10));
-    shape.emplace_back(Eigen::Vector3f(0, 0, 1.41));
-    shapes.push_back(shape);
+    vector<Eigen::Vector3f> shape1;
+    shape1.emplace_back(-5, 0, 0);
+    shape1.emplace_back(0, 0, 0);
+    shape1.emplace_back(-2.5, 0, 5);
+    shapes.push_back(shape1);
+
+    vector<Eigen::Vector3f> shape2;
+    shape2.emplace_back(-2, -2, 0);
+    shape2.emplace_back(3, 1, 0);
+    shape2.emplace_back(0.5, -0.5, 5);
+    shapes.push_back(shape2);
+
+    vector<Eigen::Vector3f> shape3;
+    shape3.emplace_back(1, -1, 0);
+    shape3.emplace_back(5, -1, 0);
+    shape3.emplace_back(3, -1, 5);
+    shapes.push_back(shape3);
+
+    vector<Eigen::Vector3f> shape4;
+    shape4.emplace_back(-1, 3, 0);
+    shape4.emplace_back(2, 3, 0);
+    shape4.emplace_back(0.5, 3, 5);
+    shapes.push_back(shape4);
 
     ROS_WARN("[Map Controller] Finished generating map");
 }
