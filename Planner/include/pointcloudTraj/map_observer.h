@@ -5,48 +5,8 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-
 class map_observer {
 public:
-//    class data_saver {
-//    public:
-//        virtual void init_storage() = 0;
-//
-//        virtual void save_point(int x, int y, double d) = 0;
-//    };
-//
-//    class img_saver : data_saver {
-//    public:
-//        explicit img_saver(int width_, int height_);
-//
-//        void init_storage() override;
-//
-//        void save_point(int x, int y, double d) override;
-//
-//        float *get_image();
-//
-//        ~img_saver();
-//
-//    private:
-//        int width;
-//        int height;
-//        float *image;
-//    };
-//
-//    class pcl_saver : data_saver {
-//    public:
-//        pcl_saver();
-//
-//        void init_storage() override;
-//
-//        void save_point(int x, int y, double d) override;
-//
-//        pcl::PointCloud<pcl::PointXYZ> *get_pcl();
-//
-//    private:
-//        pcl::PointCloud<pcl::PointXYZ> pcl;
-//    };
-
     virtual void set_camera_pose(const Eigen::Affine3f &camera_pose);
 
 protected:
@@ -125,11 +85,12 @@ private:
 class img_pcl_map_observer : public map_observer {
 public:
     img_pcl_map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
-                     int img_width, int img_height, int fov_hor);
+                         int img_width, int img_height, int fov_hor);
 
     void set_camera_pose(const Eigen::Affine3f &camera_pose) override;
 
     const float *render_to_img();
+
     const pcl::PointCloud<pcl::PointXYZ> *render_to_pcl();
 
     ~img_pcl_map_observer() override;

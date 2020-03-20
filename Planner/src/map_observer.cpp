@@ -8,6 +8,8 @@
 
 using namespace std;
 
+typedef tuple<int, double, int, double> segment_type;
+
 img_map_observer::img_map_observer(const vector<vector<Eigen::Vector3d>> &shapes_,
                                    int img_width, int img_height, int fov_hor) :
         map_observer(shapes_, img_width, img_height, fov_hor) {
@@ -23,7 +25,7 @@ const float *img_map_observer::render_to_img() {
 }
 
 img_map_observer::~img_map_observer() {
-    delete image;
+    delete[] image;
 }
 
 void img_map_observer::save_point(int x, int y, double d) {
@@ -46,9 +48,10 @@ const pcl::PointCloud<pcl::PointXYZ> *pcl_map_observer::render_to_pcl() {
 }
 
 void pcl_map_observer::save_point(int x, int y, double d) {
-    Eigen::Vector3d p = camera_translation + d * (((double) x / image_width - 0.5) / focal_distance * camera_axis_x +
-                                                  ((double) y / image_height - 0.5) / focal_distance * camera_axis_y +
-                                                  camera_axis_z);
+    Eigen::Vector3d p = camera_translation + d *
+                                             (((double) x / image_width - 0.5) / focal_distance * camera_axis_x +
+                                              (y - 0.5 * image_height) / image_width / focal_distance * camera_axis_y +
+                                              camera_axis_z);
     pcl.points.emplace_back(p[0], p[1], p[2]);
 }
 
@@ -81,7 +84,7 @@ const pcl::PointCloud<pcl::PointXYZ> *img_pcl_map_observer::render_to_pcl() {
 }
 
 img_pcl_map_observer::~img_pcl_map_observer() {
-    delete image;
+    delete[] image;
 }
 
 void img_pcl_map_observer::save_point(int x, int y, double d) {
@@ -113,7 +116,7 @@ inline double intermediate_distance(int i, int n, double v0_dist, double v1_dist
     return v0_dist * v1_dist / (v1_dist + (v0_dist - v1_dist) * i / n);
 }
 
-inline double intermediate_distance(int x_cur, tuple<int, double, int, double> *segment) {
+inline double intermediate_distance(int x_cur, segment_type *segment) {
     return intermediate_distance(x_cur - get<0>(*segment),
                                  get<2>(*segment) - get<0>(*segment),
                                  get<1>(*segment),
@@ -177,8 +180,8 @@ void map_observer::recount_cone_params() {
 map_observer::map_observer(const vector<vector<Eigen::Vector3d>> &shapes_, int img_width, int img_height, int fov_hor) :
         image_width(img_width), image_height(img_height) {
     hor_angle_2 = fov_hor / 2.0 * M_PI / 180;
-    focal_distance = (double) (0.5 / tan(1.0 * hor_angle_2));
-    ver_angle_2 = (double) atan2(0.5 * image_height / image_width, focal_distance);
+    focal_distance = 0.5 / tan(1.0 * hor_angle_2);
+    ver_angle_2 = atan2(0.5 * image_height / image_width, focal_distance);
     camera_translation = Eigen::Vector3d(0, 0, 0);
     camera_axis_x = Eigen::Vector3d(1, 0, 0);
     camera_axis_y = Eigen::Vector3d(0, 1, 0);
@@ -201,10 +204,10 @@ void map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
 }
 
 void map_observer::render() {
-    auto *line_segments = new map<plane_convex_shape *, double[4]>[image_height];
+    auto *line_segments = new map<plane_convex_shape *, segment_type>[image_height];
 
-    double t[10]{};
-    ros::Time t0 = ros::Time::now();
+//    double t[7]{};
+//    ros::Time t0 = ros::Time::now();
     for (auto &shape : shapes) {
         if ((shape.spatial_points[0] - camera_translation).dot(shape.normal) < 0) {
             vector<Eigen::Vector3d> cone_points = get_points_in_cone(shape.spatial_points);
@@ -266,23 +269,20 @@ void map_observer::render() {
                 bool break_flag;
                 do {
                     break_flag = (step_on_x && round(x) != round(x1)) || (!step_on_x && round(y) != round(y1));
+
                     int segment_y = max(0, min(image_height - 1, (int) round(y)));
-                    double segment_x = max(0.0, min((double) image_width - 1, (double) x));
+                    double segment_x = max(0.0, min(image_width - 1.0, x));
+
                     auto &segment = line_segments[segment_y];
-                    if (segment.find(&shape) == segment.end()) {
-                        auto &segment_it = segment[&shape];
-                        segment_it[0] = segment_it[2] = (double) round(segment_x);
-                        segment_it[1] = segment_it[3] = (double) z;
-                    } else {
-                        auto &segment_it = segment[&shape];
-                        if (segment_x < segment_it[0]) {
-                            segment_it[0] = (double) round(segment_x);
-                            segment_it[1] = (double) z;
-                        }
-                        if (segment_x > segment_it[2]) {
-                            segment_it[2] = (double) round(segment_x);
-                            segment_it[3] = (double) z;
-                        }
+                    bool not_found = segment.find(&shape) == segment.end();
+                    auto &segment_it = segment[&shape];
+                    if (not_found || segment_x < get<0>(segment_it)) {
+                        get<0>(segment_it) = (int) round(segment_x);
+                        get<1>(segment_it) = z;
+                    }
+                    if (not_found || segment_x > get<2>(segment_it)) {
+                        get<2>(segment_it) = (int) round(segment_x);
+                        get<3>(segment_it) = z;
                     }
 
                     x += x_incr;
@@ -294,134 +294,109 @@ void map_observer::render() {
         }
     }
 
-    ros::Time t1 = ros::Time::now();
-    t[0] = (t1 - t0).toSec();
+//    ros::Time t1 = ros::Time::now();
+//    t[0] = (t1 - t0).toSec();
 
     for (int y = 0; y < image_height; y++) {
-        ros::Time t2 = ros::Time::now();
-        vector<tuple<int, double, int, double>> segments;
+//        ros::Time t2 = ros::Time::now();
+        vector<segment_type> segments;
         if (line_segments[y].empty()) {
             continue;
         }
         for (auto segment : line_segments[y]) {
-            segments.emplace_back(segment.second[0], segment.second[1], segment.second[2], segment.second[3]);
+            segments.push_back(segment.second);
         }
-        ros::Time t3 = ros::Time::now();
-        t[1] += (t3 - t2).toSec();
+//        ros::Time t3 = ros::Time::now();
+//        t[1] += (t3 - t2).toSec();
         sort(segments.begin(), segments.end());
-        ros::Time t4 = ros::Time::now();
-        t[2] += (t4 - t3).toSec();
+//        ros::Time t4 = ros::Time::now();
+//        t[2] += (t4 - t3).toSec();
 
-        list<tuple<int, double, int, double> *> segments_list;
+        list<segment_type *> segments_list;
         auto *cur_segment = &segments[0];
-        segments_list.push_front(cur_segment);
         int x_cur = get<0>(segments[0]);
         int x_next;
         double z = get<1>(segments[0]);
-        int next_segment_idx = 1;
-        int state = 0;
+        int next_segment_idx = 0;
+        bool bool_state = true;
         int segments_size = segments.size();
-        bool ended = false;
 
-        while (!ended) {
-            switch (state) {
-                case 1: {  // found another segment
-                    bool changed;
-                    if (get<1>(segments[next_segment_idx]) < z - 0.1) {
-                        changed = true;
-                    } else if (abs(get<1>(segments[next_segment_idx]) - z) < 0.1) {
-                        if (get<2>(segments[next_segment_idx]) < get<2>(*cur_segment)) {
-                            changed = get<3>(segments[next_segment_idx]) < intermediate_distance(
-                                    get<2>(segments[next_segment_idx]), cur_segment);
-                        } else {
-                            changed = intermediate_distance(get<2>(*cur_segment),
-                                                            &segments[next_segment_idx]) < get<3>(*cur_segment);
-                        }
+        while (true) {
+            if (bool_state) {  // found another segment
+                bool changed = false;
+                if (get<1>(segments[next_segment_idx]) < z - 0.1) {
+                    changed = true;
+                } else if (abs(get<1>(segments[next_segment_idx]) - z) < 0.1) {
+                    if (get<2>(segments[next_segment_idx]) < get<2>(*cur_segment)) {
+                        changed = get<3>(segments[next_segment_idx])
+                                  < intermediate_distance(get<2>(segments[next_segment_idx]), cur_segment);
                     } else {
-                        changed = false;
-                    }
-                    if (changed) {
-                        z = get<1>(segments[next_segment_idx]);
-                        cur_segment = &segments[next_segment_idx];
+                        changed = get<3>(*cur_segment)
+                                  > intermediate_distance(get<2>(*cur_segment), &segments[next_segment_idx]);
                     }
                 }
-                    segments_list.push_front(&segments[next_segment_idx]);
-                    next_segment_idx++;
+                if (changed) {
+                    z = get<1>(segments[next_segment_idx]);
+                    cur_segment = &segments[next_segment_idx];
+                }
 
-                case 0:   // just started
-                    if (next_segment_idx < segments_size
-                        && get<0>(segments[next_segment_idx])
-                           < get<2>(*cur_segment) + 1) {
-                        x_next = get<0>(segments[next_segment_idx]);
-                        state = 1;
+                segments_list.push_front(&segments[next_segment_idx]);
+                next_segment_idx++;
+            } else {  // ended segment
+                cur_segment = nullptr;
+                z = 1000000;
+                for (auto it = segments_list.begin(); it != segments_list.end();) {
+                    if (get<2>(**it) < x_cur) {
+                        it = segments_list.erase(it);
                     } else {
-                        x_next = get<2>(*cur_segment) + 1;
-                        state = 2;
+                        double z_ = intermediate_distance(x_cur, *it);
+                        if (z_ < z) {
+                            z = z_;
+                            cur_segment = *it;
+                        }
+                        ++it;
                     }
+                }
 
-                    {
-                        ros::Time t7 = ros::Time::now();
-                        for (; x_cur < x_next; x_cur++) {
-                            save_point(x_cur, y, intermediate_distance(x_cur, cur_segment));
-                        }
-                        ros::Time t8 = ros::Time::now();
-                        t[6] += (t8 - t7).toSec();
-                    }
-                    break;
-                case 2:  // ended segment
-                    cur_segment = nullptr;
-                    z = 1000000;
-                    for (auto it = segments_list.begin(); it != segments_list.end();) {
-                        if (get<2>(**it) < x_cur) {
-                            it = segments_list.erase(it);
-                        } else {
-                            double z_ = intermediate_distance(x_cur, *it);
-                            if (z_ < z) {
-                                z = z_;
-                                cur_segment = *it;
-                            }
-                            ++it;
-                        }
-                    }
-
-                    if (cur_segment != nullptr) {
-                        if (next_segment_idx < segments_size
-                            && get<0>(segments[next_segment_idx])
-                               < get<2>(*cur_segment) + 1) {
-                            x_next = get<0>(segments[next_segment_idx]);
-                            state = 1;
-                        } else {
-                            x_next = get<2>(*cur_segment) + 1;
-                            state = 2;
-                        }
-
-                        {
-                            ros::Time t7 = ros::Time::now();
-                            for (; x_cur < x_next; x_cur++) {
-                                save_point(x_cur, y, intermediate_distance(x_cur, cur_segment));
-                            }
-                            ros::Time t8 = ros::Time::now();
-                            t[6] += (t8 - t7).toSec();
-                        }
+                if (cur_segment == nullptr) {
+                    if (next_segment_idx < segments_size) {
+                        cur_segment = &segments[next_segment_idx];
+                        segments_list.push_back(cur_segment);
+                        x_cur = get<0>(*cur_segment);
+                        bool_state = true;
+                        continue;
                     } else {
-                        if (next_segment_idx < segments_size) {
-                            cur_segment = &segments[next_segment_idx];
-                            segments_list.push_back(cur_segment);
-                            x_cur = get<0>(*cur_segment);
-                            state = 1;
-                        } else {
-                            ended = true;
-                        }
+                        break;
                     }
+                }
             }
+
+            if (next_segment_idx < segments_size
+                && get<0>(segments[next_segment_idx])
+                   < get<2>(*cur_segment) + 1) {
+                x_next = get<0>(segments[next_segment_idx]);
+                bool_state = true;
+            } else {
+                x_next = get<2>(*cur_segment) + 1;
+                bool_state = false;
+            }
+
+//            ros::Time t7 = ros::Time::now();
+            for (; x_cur < x_next; x_cur++) {
+                save_point(x_cur, y, intermediate_distance(x_cur, cur_segment));
+            }
+//            ros::Time t8 = ros::Time::now();
+//            t[6] += (t8 - t7).toSec();
         }
-        ros::Time t5 = ros::Time::now();
-        t[3] += (t5 - t4).toSec();
+//        ros::Time t5 = ros::Time::now();
+//        t[3] += (t5 - t4).toSec();
     }
 
-    ros::Time t6 = ros::Time::now();
-    t[4] = (t6 - t1).toSec();
-    t[5] = (t6 - t0).toSec();
+    delete[] line_segments;
+
+//    ros::Time t6 = ros::Time::now();
+//    t[4] = (t6 - t1).toSec();
+//    t[5] = (t6 - t0).toSec();
 //    cout << "t[0] = " << t[0] << "\n";
 //    cout << "t[1] = " << t[1] << "\n";
 //    cout << "t[2] = " << t[2] << "\n";
