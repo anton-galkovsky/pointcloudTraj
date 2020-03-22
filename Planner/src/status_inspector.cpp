@@ -13,7 +13,7 @@ static string var_exit_code_file;
 //  4    max_time_sec has passed
 //  5    default
 void print_code(int code) {
-    ofstream fout(var_exit_code_file, ios::out);
+    ofstream fout(var_exit_code_file);
     fout << "EXIT_CODE=" << code << "\n";
     fout.close();
 }

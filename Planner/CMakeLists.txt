@@ -3,7 +3,7 @@ project(pointcloudTraj)
 
 set(CMAKE_VERBOSE_MAKEFILE "true")
 set(CMAKE_BUILD_TYPE "Debug")
-set(CMAKE_CXX_FLAGS "-std=c++11 -march=native -DEIGEN_DONT_PARALLELIZE ${CMAKE_CXX_FLAGS} -g -O0 -Wall")
+set(CMAKE_CXX_FLAGS "-std=c++14 -march=native -DEIGEN_DONT_PARALLELIZE ${CMAKE_CXX_FLAGS} -g -O0 -Wall")
 
 find_package(catkin REQUIRED COMPONENTS
         roscpp

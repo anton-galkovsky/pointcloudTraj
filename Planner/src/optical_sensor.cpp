@@ -99,7 +99,7 @@ void position_callback(const quadrotor_msgs::PositionCommand &cmd) {
 
     *camera_pose = Eigen::Affine3f::Identity();
     camera_pose->translate(translation);
-    camera_pose->rotate(Eigen::AngleAxisf(rotation));
+    camera_pose->rotate(rotation);
 }
 
 int main(int argc, char **argv) {

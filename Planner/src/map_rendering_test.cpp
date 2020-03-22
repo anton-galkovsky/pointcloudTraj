@@ -37,7 +37,7 @@ void prepare_rendering_scan(img_pcl_map_observer &observer, sensor_msgs::PointCl
 
     Eigen::Affine3f sensorPose = Eigen::Affine3f::Identity();
     sensorPose.translate(translation);
-    sensorPose.rotate(Eigen::AngleAxisf(rotation));
+    sensorPose.rotate(rotation);
 
     observer.set_camera_pose(sensorPose);
 
@@ -50,19 +50,20 @@ void prepare_rendering_scan(img_pcl_map_observer &observer, sensor_msgs::PointCl
     auto rgb_image = pcl::visualization::FloatImageUtils::getVisualImage(depth_image, image_w, image_h);
     pcl::io::saveRgbPNGFile(image_file_png, rgb_image, image_w, image_h);
 
-    FILE *fout = fopen(image_file_txt.c_str(), "w");
+    ofstream fout(image_file_txt);
     for (int j = 0; j < image_h; j++) {
         for (int i = 0; i < image_w; i++) {
             double v = depth_image[j * image_w + i];
             if (v == INFINITY) {
-                fprintf(fout, "    ");
+                fout << "    ";
             } else {
-                fprintf(fout, "%4d", (int) (v * 100));
+                fout.width(4);
+                fout << (int) (v * 100) % 10000;
             }
         }
-        fprintf(fout, "\n");
+        fout << "\n";
     }
-    fclose(fout);
+    fout.close();
 
     image_msg.header.stamp = ros::Time::now();
     image_msg.height = image_h;

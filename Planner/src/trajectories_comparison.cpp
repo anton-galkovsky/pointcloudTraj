@@ -8,7 +8,7 @@ void read_trajectories(const string &file, pcl::PointCloud<pcl::PointXYZ> &traj_
     pcl::PointXYZ point;
     int n;
 
-    ifstream fin(file, ios::in);
+    ifstream fin(file);
     while (fin.good() && !fin.eof()) {
         fin >> n;
         for (int i = 0; i < n; i++) {
