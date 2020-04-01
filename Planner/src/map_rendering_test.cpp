@@ -35,11 +35,11 @@ void prepare_rendering_scan(img_pcl_map_observer &observer, sensor_msgs::PointCl
     Eigen::Matrix3f rotation;
     rotation << camera_axis_x, camera_axis_y, camera_axis_z;
 
-    Eigen::Affine3f sensorPose = Eigen::Affine3f::Identity();
-    sensorPose.translate(translation);
-    sensorPose.rotate(rotation);
+    Eigen::Affine3f camera_pose = Eigen::Affine3f::Identity();
+    camera_pose.translate(translation);
+    camera_pose.rotate(rotation);
 
-    observer.set_camera_pose(sensorPose);
+    observer.set_camera_pose(camera_pose);
 
     auto observed_map_pcl = observer.render_to_pcl();
     pcl::toROSMsg(*observed_map_pcl, observed_map_msg);
@@ -93,14 +93,14 @@ int main(int argc, char **argv) {
     node_handle.param("map_boundary/lower_y", y_1,     -50.0);
     node_handle.param("map_boundary/upper_y", y_2,      50.0);
 
-    node_handle.param("obstacles/lower_w",    w_1,      0.6);
-    node_handle.param("obstacles/upper_w",    w_2,      3.2);
-    node_handle.param("obstacles/lower_h",    h_1,      1.0);
-    node_handle.param("obstacles/upper_h",    h_2,     10.0);
+    node_handle.param("obstacles/lower_w",    w_1,       0.6);
+    node_handle.param("obstacles/upper_w",    w_2,       3.2);
+    node_handle.param("obstacles/lower_h",    h_1,       1.0);
+    node_handle.param("obstacles/upper_h",    h_2,      10.0);
 
-    node_handle.param("map/resolution",       res,      0.1);
-    node_handle.param("map/obstacles_num",    obs_num,  600);
-    node_handle.param("map/seed",             seed,     1);
+    node_handle.param("map/resolution",       res,       0.1);
+    node_handle.param("map/obstacles_num",    obs_num,   600);
+    node_handle.param("map/seed",             seed,      1);
 
     node_handle.param("camera/width",         image_w,  1280);
     node_handle.param("camera/height",        image_h,  960);
@@ -123,11 +123,11 @@ int main(int argc, char **argv) {
 
     auto global_map_pcl = generator.get_global_map_pcl();
     sensor_msgs::PointCloud2 global_map_msg;
-    pcl::toROSMsg(*global_map_pcl, global_map_msg);
+    pcl::toROSMsg(global_map_pcl, global_map_msg);
     global_map_msg.header.frame_id = "map";
 
     auto shapes = generator.get_shapes();
-    auto observer = img_pcl_map_observer(*shapes, image_w, image_h, fov_hor);
+    auto observer = img_pcl_map_observer(shapes, image_w, image_h, fov_hor);
 
     sensor_msgs::PointCloud2 observed_map_msg;
     sensor_msgs::Image image_msg;

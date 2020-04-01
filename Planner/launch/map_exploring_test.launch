@@ -1,0 +1,40 @@
+<launch>
+    <node type="map_exploring_test" name="map_exploring_test" pkg="pointcloudTraj" output="screen">
+        <param name="map_boundary/lower_x" value="-50.0"  />
+        <param name="map_boundary/upper_x" value=" 50.0"  />
+        <param name="map_boundary/lower_y" value="-50.0"  />
+        <param name="map_boundary/upper_y" value=" 50.0"  />
+
+        <param name="obstacles/lower_w"    value="  0.6"  />
+        <param name="obstacles/upper_w"    value="  3.2"  />
+        <param name="obstacles/lower_h"    value="  1.0"  />
+        <param name="obstacles/upper_h"    value=" 10.0"  />
+
+        <param name="map/resolution"       value="  0.1"  />
+        <param name="map/obstacles_num"    value="  600"  />
+        <param name="map/seed"             value="  1"    />
+
+        <param name="camera/width"         value="  320"  />
+        <param name="camera/height"        value="  240"  />
+        <param name="camera/fov_hor"       value="  90"   />
+
+        <param name="copter/init_x"        value="-45.0"  />
+        <param name="copter/init_y"        value="-45.0"  />
+        <param name="copter/init_z"        value="  2.0"  />
+        <param name="copter/end_x"         value=" 30.0"  />
+        <param name="copter/end_y"         value=" 30.0"  />
+        <param name="copter/axis_z_0"      value="  0.707"/>
+        <param name="copter/axis_z_1"      value="  0.707"/>
+        <param name="copter/axis_z_2"      value="  0.0"  />
+        <param name="copter/init_x2"       value="-44.7"  />
+        <param name="copter/init_y2"       value="-45.3"  />
+        <param name="copter/init_z2"       value="  3.0"  />
+        <param name="copter/axis_z2_0"     value="  0.491"/>
+        <param name="copter/axis_z2_1"     value="  0.816"/>
+        <param name="copter/axis_z2_2"     value=" -0.305"/>
+    </node>
+
+    <node name="rviz" type="rviz" pkg="rviz" output="screen"
+          args="-d $(find pointcloudTraj)/launch/rviz_config/rviz_map_exploring_test_config.rviz">
+    </node>
+</launch>

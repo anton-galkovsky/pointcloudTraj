@@ -67,7 +67,8 @@ target_link_libraries(optical_sensor
 
 add_executable(map_provider
         src/map_provider.cpp
-        src/map_generator.cpp)
+        src/map_generator.cpp
+        src/voxel_map.cpp)
 
 target_link_libraries(map_provider
         ${catkin_LIBRARIES}
@@ -76,9 +77,20 @@ target_link_libraries(map_provider
 add_executable(map_rendering_test
         src/map_rendering_test.cpp
         src/map_generator.cpp
+        src/voxel_map.cpp
         src/map_observer.cpp)
 
 target_link_libraries(map_rendering_test
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES})
+
+add_executable(map_exploring_test
+        src/map_exploring_test.cpp
+        src/map_generator.cpp
+        src/voxel_map.cpp
+        src/map_observer.cpp)
+
+target_link_libraries(map_exploring_test
         ${catkin_LIBRARIES}
         ${PCL_LIBRARIES})
 

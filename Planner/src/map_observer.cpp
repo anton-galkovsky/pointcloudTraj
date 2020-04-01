@@ -1,14 +1,10 @@
 #include <ros/ros.h>
-#include <cmath>
-#include <tuple>
 #include <list>
 #include <algorithm>
-#include <iostream>
+//#include <iostream>
 #include "pointcloudTraj/map_observer.h"
 
 using namespace std;
-
-typedef tuple<int, double, int, double> segment_type;
 
 img_map_observer::img_map_observer(const vector<vector<Eigen::Vector3d>> &shapes_,
                                    int img_width, int img_height, int fov_hor) :
@@ -103,6 +99,64 @@ void img_pcl_map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
 }
 
 
+marked_map_observer::marked_map_observer(const vector<vector<Eigen::Vector3d>> &marked_points,
+                                         const vector<vector<Eigen::Vector3d>> &shapes_,
+                                         int img_width, int img_height, int fov_hor) :
+        map_observer(shapes_, img_width, img_height, fov_hor), marked_points(marked_points), marked_img_pts(nullptr) {
+    marks_image = new pair<const Eigen::Vector3d *, float>[img_width * img_height];
+}
+
+void marked_map_observer::render_to_marked_img_pts(vector<tuple<const Eigen::Vector3d *, int, int>> &marked_img_pts_) {
+    for (int i = 0; i < image_width * image_height; i++) {
+        marks_image[i] = {nullptr, INFINITY};
+    }
+    marked_img_pts = &marked_img_pts_;
+    marked_img_pts->clear();
+    render();
+}
+
+marked_map_observer::~marked_map_observer() {
+    delete[] marks_image;
+}
+
+void marked_map_observer::save_point(int x, int y, double d) {
+    auto ptr = marks_image[y * image_width + x].first;
+    float dist = marks_image[y * image_width + x].second;
+    if (ptr != nullptr && abs(dist - d) < 0.05) {
+        marked_img_pts->emplace_back(ptr, x, y);
+    }
+}
+
+void marked_map_observer::operate_marked(int shape_idx) {
+    for (const auto &point : marked_points[shape_idx]) {
+        Eigen::Vector3d delta = point - camera_translation;
+        if (delta.dot(cone_normals[0]) < -0.01 ||
+            delta.dot(cone_normals[1]) < -0.01 ||
+            delta.dot(cone_normals[2]) < -0.01 ||
+            delta.dot(cone_normals[3]) < -0.01) {
+            continue;
+        }
+        double distance_z = max(delta.dot(camera_axis_z), 0.01);
+        double scale = focal_distance / distance_z * image_width;
+        int img_x = (int) round(delta.dot(camera_axis_x) * scale + image_width / 2.0);
+        if (img_x >= image_width || img_x < 0) {
+            continue;
+        }
+        int img_y = (int) round(delta.dot(camera_axis_y) * scale + image_height / 2.0);
+        if (img_y >= image_height || img_y < 0) {
+            continue;
+        }
+        if (distance_z < marks_image[img_y * image_width + img_x].second) {
+            marks_image[img_y * image_width + img_x] = {&point, distance_z};
+        }
+    }
+}
+
+double marked_map_observer::get_focal_distance() {
+    return focal_distance;
+}
+
+
 map_observer::plane_convex_shape::plane_convex_shape(const vector<Eigen::Vector3d> &sp_points) {
     spatial_points = sp_points;
     normal = (spatial_points[1] - spatial_points[0]).cross(spatial_points[2] - spatial_points[1]);
@@ -116,13 +170,15 @@ inline double intermediate_distance(int i, int n, double v0_dist, double v1_dist
     return v0_dist * v1_dist / (v1_dist + (v0_dist - v1_dist) * i / n);
 }
 
-inline double intermediate_distance(int x_cur, segment_type *segment) {
+inline double intermediate_distance(int x_cur, const segment_type *segment) {
     return intermediate_distance(x_cur - get<0>(*segment),
                                  get<2>(*segment) - get<0>(*segment),
                                  get<1>(*segment),
                                  get<3>(*segment));
 }
 
+void map_observer::operate_marked(int) {
+}
 
 inline double intermediate_distance(double alpha, double v0_dist, double v1_dist) {
     return v0_dist * v1_dist / (v1_dist + (v0_dist - v1_dist) * alpha);
@@ -130,7 +186,7 @@ inline double intermediate_distance(double alpha, double v0_dist, double v1_dist
 
 void map_observer::intersect_points(list<Eigen::Vector3d> &points,
                                     const Eigen::Vector3d &plane_point, const Eigen::Vector3d &normal) {
-    for (auto it_1 = points.begin(), it = it_1; it != points.end(); ++it) {
+    for (auto it_1 = points.begin(), it = it_1; it != points.end();) {
         ++it_1;
         if (it_1 == points.end()) {
             it_1 = points.begin();
@@ -138,10 +194,14 @@ void map_observer::intersect_points(list<Eigen::Vector3d> &points,
         double n_dot_i = (*it - plane_point).dot(normal);
         double n_dot_i_1 = (*it_1 - plane_point).dot(normal);
         if ((n_dot_i < -0.01 && n_dot_i_1 > 0.01) || (n_dot_i_1 < -0.01 && n_dot_i > 0.01)) {
-            points.insert(it_1, *it - (*it_1 - *it) * n_dot_i / (*it_1 - *it).dot(normal));
+            auto new_it = points.insert(it_1, *it - (*it_1 - *it) * n_dot_i / (*it_1 - *it).dot(normal));
+            if (new_it == points.begin()) {
+                break;
+            } else {
+                it = it_1;
+            }
+        } else {
             ++it;
-            it_1 = it;
-            ++it_1;
         }
     }
     for (auto it = points.begin(); it != points.end();) {
@@ -208,7 +268,9 @@ void map_observer::render() {
 
 //    double t[7]{};
 //    ros::Time t0 = ros::Time::now();
+    int shape_idx = -1;
     for (auto &shape : shapes) {
+        shape_idx++;
         if ((shape.spatial_points[0] - camera_translation).dot(shape.normal) < 0) {
             vector<Eigen::Vector3d> cone_points = get_points_in_cone(shape.spatial_points);
 
@@ -216,11 +278,13 @@ void map_observer::render() {
             for (const auto &point : cone_points) {
                 Eigen::Vector3d delta = point - camera_translation;
                 double distance_z = max(delta.dot(camera_axis_z), 0.01);
-                double scale = focal_distance / distance_z;
-                double img_x = delta.dot(camera_axis_x) * scale * image_width + image_width / 2.0;
-                double img_y = delta.dot(camera_axis_y) * scale * image_width + image_height / 2.0;
+                double scale = focal_distance / distance_z * image_width;
+                double img_x = delta.dot(camera_axis_x) * scale + image_width / 2.0;
+                double img_y = delta.dot(camera_axis_y) * scale + image_height / 2.0;
                 shape.image_points.emplace_back(img_x, img_y, distance_z);
             }
+
+            operate_marked(shape_idx);
 
             int image_points_size = shape.image_points.size();
             for (int i = 0; i < image_points_size; i++) {

@@ -9,10 +9,10 @@
 
 using namespace std;
 
-void prepare_map_mesh_msg(const vector<vector<Eigen::Vector3d>> *shapes, pcl_msgs::PolygonMesh &polygon_mesh_msg) {
+void prepare_map_mesh_msg(const vector<vector<Eigen::Vector3d>> &shapes, pcl_msgs::PolygonMesh &polygon_mesh_msg) {
     pcl::PointCloud<pcl::PointXYZ> map_mesh_pcl;
     int k = 0;
-    for (const auto &shape : *shapes) {
+    for (const auto &shape : shapes) {
         pcl_msgs::Vertices polygon_indexes;
         for (auto point : shape) {
             map_mesh_pcl.points.emplace_back(point[0], point[1], point[2]);
@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 
     auto global_map_pcl = generator.get_global_map_pcl();
     sensor_msgs::PointCloud2 global_map_msg;
-    pcl::toROSMsg(*global_map_pcl, global_map_msg);
+    pcl::toROSMsg(global_map_pcl, global_map_msg);
     global_map_msg.header.frame_id = "map";
 
     auto shapes = generator.get_shapes();
