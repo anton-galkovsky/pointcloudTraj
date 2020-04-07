@@ -13,7 +13,8 @@ public:
     virtual void set_camera_pose(const Eigen::Affine3f &camera_pose);
 
 protected:
-    map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_, int img_width, int img_height, int fov_hor);
+    map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
+                 int img_width, int img_height, int fov_hor, double max_distance_z);
 
     void render();
 
@@ -44,7 +45,7 @@ private:
         Eigen::Vector3d normal;
     };
 
-    std::vector<Eigen::Vector3d> get_points_in_cone(const std::vector<Eigen::Vector3d> &points);
+    bool compute_points_in_cone(const std::vector<Eigen::Vector3d> &points, std::vector<Eigen::Vector3d> &cone_points);
 
     void recount_cone_params();
 
@@ -55,12 +56,14 @@ private:
 
     double hor_angle_2;
     double ver_angle_2;
+
+    double max_distance_z;
 };
 
 class img_map_observer : public map_observer {
 public:
     img_map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
-                     int img_width, int img_height, int fov_hor);
+                     int img_width, int img_height, int fov_hor, double max_distance_z);
 
     const float *render_to_img();
 
@@ -75,7 +78,7 @@ private:
 class pcl_map_observer : public map_observer {
 public:
     pcl_map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
-                     int img_width, int img_height, int fov_hor);
+                     int img_width, int img_height, int fov_hor, double max_distance_z);
 
     const pcl::PointCloud<pcl::PointXYZ> *render_to_pcl();
 
@@ -90,7 +93,7 @@ private:
 class img_pcl_map_observer : public map_observer {
 public:
     img_pcl_map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
-                         int img_width, int img_height, int fov_hor);
+                         int img_width, int img_height, int fov_hor, double max_distance_z);
 
     void set_camera_pose(const Eigen::Affine3f &camera_pose) override;
 
@@ -113,11 +116,13 @@ class marked_map_observer : public map_observer {
 public:
     marked_map_observer(const std::vector<std::vector<Eigen::Vector3d>> &marked_points,
                         const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
-                        int img_width, int img_height, int fov_hor);
+                        int img_width, int img_height, int fov_hor, double max_distance_z);
 
     void render_to_marked_img_pts(std::vector<std::tuple<const Eigen::Vector3d *, int, int>> &marked_img_pts_);
 
     double get_focal_distance();
+
+    double get_pixel_cone_angle_2();
 
     ~marked_map_observer() override;
 
@@ -129,4 +134,6 @@ private:
     const std::vector<std::vector<Eigen::Vector3d>> &marked_points;
     std::vector<std::tuple<const Eigen::Vector3d *, int, int>> *marked_img_pts;
     std::pair<const Eigen::Vector3d *, float> *marks_image;
+
+    double pixel_cone_angle_2;
 };

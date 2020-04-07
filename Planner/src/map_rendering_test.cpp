@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
     global_map_msg.header.frame_id = "map";
 
     auto shapes = generator.get_shapes();
-    auto observer = img_pcl_map_observer(shapes, image_w, image_h, fov_hor);
+    auto observer = img_pcl_map_observer(shapes, image_w, image_h, fov_hor, 1000);
 
     sensor_msgs::PointCloud2 observed_map_msg;
     sensor_msgs::Image image_msg;

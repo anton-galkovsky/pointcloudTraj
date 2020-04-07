@@ -17,6 +17,7 @@
         <param name="camera/width"         value="  320"  />
         <param name="camera/height"        value="  240"  />
         <param name="camera/fov_hor"       value="  90"   />
+        <param name="camera/max_dist"      value="200.0"  />
 
         <param name="copter/init_x"        value="-45.0"  />
         <param name="copter/init_y"        value="-45.0"  />

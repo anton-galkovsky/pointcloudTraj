@@ -33,6 +33,16 @@ void voxel_map<Cont2>::add_point_cloud(const Cont1 &pcl) {
 }
 
 template<class Cont2>
+template<class T>
+void voxel_map<Cont2>::add_point(const T &point) {
+    int x = 0, y = 0, z = 0;
+    to_voxel_components(x, y, z, point, res);
+    if (map.insert({x, y, z}).second) {
+        voxel_cloud.emplace_back(x * res, y * res, z * res);
+    }
+}
+
+template<class Cont2>
 const Cont2 &voxel_map<Cont2>::get_voxel_cloud() {
     return voxel_cloud;
 }
@@ -51,6 +61,7 @@ typedef vector<Eigen::Vector3f>        vec_f;
 
 template void voxel_map<pcl_p>::add_point_cloud<pcl_p>(const pcl_p &pcl);
 template void voxel_map<pcl_p>::add_point_cloud<vec_d>(const vec_d &pcl);
+template void voxel_map<pcl_p>::add_point<Eigen::Vector3f>(const Eigen::Vector3f &point);
 template vec_d voxel_map<vec_d>::to_voxel_cloud<vec_d>(const vec_d &pcl, double res);
 template vec_f voxel_map<vec_f>::to_voxel_cloud<vec_f>(const vec_f &pcl, double res);
 template void to_voxel_components<Eigen::Vector3d>(int &x, int &y, int &z, const Eigen::Vector3d &point, double res);

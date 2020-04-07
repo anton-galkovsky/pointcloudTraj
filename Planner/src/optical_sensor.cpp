@@ -26,7 +26,7 @@ void prepare_map_scan(sensor_msgs::PointCloud2 &observed_map_msg, sensor_msgs::I
         return;
     }
 
-    static auto observer = img_pcl_map_observer(map_shapes, image_w, image_h, fov_hor);
+    static auto observer = img_pcl_map_observer(map_shapes, image_w, image_h, fov_hor, 1000);
     static voxel_map_pcl observed_voxel_map(res);
 
     observer.set_camera_pose(*camera_pose);

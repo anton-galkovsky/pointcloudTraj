@@ -6,9 +6,15 @@
 
 using namespace std;
 
+map_observer::plane_convex_shape::plane_convex_shape(const vector<Eigen::Vector3d> &sp_points) {
+    spatial_points = sp_points;
+    normal = (spatial_points[1] - spatial_points[0]).cross(spatial_points[2] - spatial_points[1]);
+}
+
+
 img_map_observer::img_map_observer(const vector<vector<Eigen::Vector3d>> &shapes_,
-                                   int img_width, int img_height, int fov_hor) :
-        map_observer(shapes_, img_width, img_height, fov_hor) {
+                                   int img_width, int img_height, int fov_hor, double max_distance_z) :
+        map_observer(shapes_, img_width, img_height, fov_hor, max_distance_z) {
     image = new float[image_width * image_height];
 }
 
@@ -30,8 +36,8 @@ void img_map_observer::save_point(int x, int y, double d) {
 
 
 pcl_map_observer::pcl_map_observer(const vector<vector<Eigen::Vector3d>> &shapes_,
-                                   int img_width, int img_height, int fov_hor) :
-        map_observer(shapes_, img_width, img_height, fov_hor) {
+                                   int img_width, int img_height, int fov_hor, double max_distance_z) :
+        map_observer(shapes_, img_width, img_height, fov_hor, max_distance_z) {
     pcl.height = 1;
     pcl.is_dense = true;
 }
@@ -53,8 +59,8 @@ void pcl_map_observer::save_point(int x, int y, double d) {
 
 
 img_pcl_map_observer::img_pcl_map_observer(const vector<vector<Eigen::Vector3d>> &shapes_,
-                                           int img_width, int img_height, int fov_hor) :
-        map_observer(shapes_, img_width, img_height, fov_hor) {
+                                           int img_width, int img_height, int fov_hor, double max_distance_z) :
+        map_observer(shapes_, img_width, img_height, fov_hor, max_distance_z) {
     image = new float[image_width * image_height];
     pcl.height = 1;
     pcl.is_dense = true;
@@ -101,9 +107,11 @@ void img_pcl_map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
 
 marked_map_observer::marked_map_observer(const vector<vector<Eigen::Vector3d>> &marked_points,
                                          const vector<vector<Eigen::Vector3d>> &shapes_,
-                                         int img_width, int img_height, int fov_hor) :
-        map_observer(shapes_, img_width, img_height, fov_hor), marked_points(marked_points), marked_img_pts(nullptr) {
+                                         int img_width, int img_height, int fov_hor, double max_distance_z) :
+        map_observer(shapes_, img_width, img_height, fov_hor, max_distance_z),
+        marked_points(marked_points), marked_img_pts(nullptr) {
     marks_image = new pair<const Eigen::Vector3d *, float>[img_width * img_height];
+    pixel_cone_angle_2 = 1 / (sqrt(2) * img_width * focal_distance);
 }
 
 void marked_map_observer::render_to_marked_img_pts(vector<tuple<const Eigen::Vector3d *, int, int>> &marked_img_pts_) {
@@ -156,10 +164,11 @@ double marked_map_observer::get_focal_distance() {
     return focal_distance;
 }
 
+double marked_map_observer::get_pixel_cone_angle_2() {
+    return pixel_cone_angle_2;
+}
 
-map_observer::plane_convex_shape::plane_convex_shape(const vector<Eigen::Vector3d> &sp_points) {
-    spatial_points = sp_points;
-    normal = (spatial_points[1] - spatial_points[0]).cross(spatial_points[2] - spatial_points[1]);
+void map_observer::operate_marked(int) {
 }
 
 
@@ -175,9 +184,6 @@ inline double intermediate_distance(int x_cur, const segment_type *segment) {
                                  get<2>(*segment) - get<0>(*segment),
                                  get<1>(*segment),
                                  get<3>(*segment));
-}
-
-void map_observer::operate_marked(int) {
 }
 
 inline double intermediate_distance(double alpha, double v0_dist, double v1_dist) {
@@ -213,21 +219,25 @@ void map_observer::intersect_points(list<Eigen::Vector3d> &points,
     }
 }
 
-vector<Eigen::Vector3d> map_observer::get_points_in_cone(const vector<Eigen::Vector3d> &points) {
-    list<Eigen::Vector3d> cone_points;
+bool map_observer::compute_points_in_cone(const vector<Eigen::Vector3d> &points, vector<Eigen::Vector3d> &cone_points) {
+    list<Eigen::Vector3d> cone_points_list;
     for (const auto &point : points) {
-        cone_points.push_back(point);
+        cone_points_list.push_back(point);
     }
 
     for (const auto &cone_normal : cone_normals) {
-        intersect_points(cone_points, camera_translation, cone_normal);
+        intersect_points(cone_points_list, camera_translation, cone_normal);
     }
 
-    vector<Eigen::Vector3d> ans_points;
-    for (const auto &point : cone_points) {
-        ans_points.push_back(point);
+    double min_distance_z = 100000;
+    for (const auto &point : cone_points_list) {
+        cone_points.push_back(point);
+
+        double distance_z = (point - camera_translation).dot(camera_axis_z);
+        min_distance_z = min(min_distance_z, distance_z);
     }
-    return ans_points;
+
+    return min_distance_z < max_distance_z && !cone_points.empty();
 }
 
 void map_observer::recount_cone_params() {
@@ -237,10 +247,11 @@ void map_observer::recount_cone_params() {
     cone_normals[3] = camera_axis_z * tan(1.0 * ver_angle_2) - camera_axis_y;
 }
 
-map_observer::map_observer(const vector<vector<Eigen::Vector3d>> &shapes_, int img_width, int img_height, int fov_hor) :
-        image_width(img_width), image_height(img_height) {
+map_observer::map_observer(const vector<vector<Eigen::Vector3d>> &shapes_,
+                           int img_width, int img_height, int fov_hor, double max_distance_z) :
+        image_width(img_width), image_height(img_height), max_distance_z(max_distance_z) {
     hor_angle_2 = fov_hor / 2.0 * M_PI / 180;
-    focal_distance = 0.5 / tan(1.0 * hor_angle_2);
+    focal_distance = 0.5 / tan(hor_angle_2);
     ver_angle_2 = atan2(0.5 * image_height / image_width, focal_distance);
     camera_translation = Eigen::Vector3d(0, 0, 0);
     camera_axis_x = Eigen::Vector3d(1, 0, 0);
@@ -272,7 +283,11 @@ void map_observer::render() {
     for (auto &shape : shapes) {
         shape_idx++;
         if ((shape.spatial_points[0] - camera_translation).dot(shape.normal) < 0) {
-            vector<Eigen::Vector3d> cone_points = get_points_in_cone(shape.spatial_points);
+            vector<Eigen::Vector3d> cone_points;
+            bool status = compute_points_in_cone(shape.spatial_points, cone_points);
+            if (!status) {
+                continue;
+            }
 
             shape.image_points.clear();
             for (const auto &point : cone_points) {
