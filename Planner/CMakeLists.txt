@@ -56,12 +56,13 @@ target_link_libraries(traj_server
         ${catkin_LIBRARIES}
         ${PCL_LIBRARIES})
 
-add_executable(optical_sensor
-        src/optical_sensor.cpp
+add_executable(camera_sensor
+        src/camera_sensor.cpp
         src/map_observer.cpp
-        src/voxel_map.cpp)
+        src/cone_keeper.cpp
+        src/utils.cpp)
 
-target_link_libraries(optical_sensor
+target_link_libraries(camera_sensor
         ${catkin_LIBRARIES}
         ${PCL_LIBRARIES})
 
@@ -87,6 +88,8 @@ target_link_libraries(map_rendering_test
 add_executable(map_exploring_test
         src/map_exploring_test.cpp
         src/map_generator.cpp
+        src/cone_keeper.cpp
+        src/utils.cpp
         src/voxel_map.cpp
         src/map_observer.cpp)
 

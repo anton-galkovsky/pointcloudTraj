@@ -1,18 +1,19 @@
 #include <ros/ros.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/image_encodings.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include "pointcloudTraj/map_observer.h"
 #include "pointcloudTraj/map_generator.h"
 #include "pointcloudTraj/voxel_map.h"
+#include "pointcloudTraj/cone_keeper.h"
+#include "pointcloudTraj/utils.h"
 
 using namespace std;
 
 static marked_map_observer *observer;
 
-static double focal_distance;
+static double pixel_cone_angle_2, focal_distance;
 static double res;
 static int image_w, image_h;
 static double x1_init, y1_init, z1_init;
@@ -22,8 +23,6 @@ static double axis_z1_0, axis_z1_1, axis_z1_2;
 static double axis_z2_0, axis_z2_1, axis_z2_2;
 static double axis_z3_0, axis_z3_1, axis_z3_2;
 
-typedef tuple<const Eigen::Vector3d *, int, int> marked_img_pt_type;
-typedef tuple<const Eigen::Vector3d *, int, int, int, int> marked_img_pt_pair_type;
 typedef tuple<const Eigen::Vector3d *, Eigen::Vector3f, Eigen::Vector3f> marked_diagonal_type;
 typedef tuple<Eigen::Vector3f, Eigen::Vector3f, double, double> marked_cone_value_type;
 
@@ -176,35 +175,6 @@ struct cone {
     Eigen::Vector3f n_l;
 };
 
-template<class T>
-void intersect_points_with_plane(list<T> &points, const T &plane_point, const T &normal) {
-    for (auto it_1 = points.begin(), it = it_1; it != points.end();) {
-        ++it_1;
-        if (it_1 == points.end()) {
-            it_1 = points.begin();
-        }
-        double n_dot_i = (*it - plane_point).dot(normal);
-        double n_dot_i_1 = (*it_1 - plane_point).dot(normal);
-        if ((n_dot_i < -0.01 && n_dot_i_1 > 0.01) || (n_dot_i_1 < -0.01 && n_dot_i > 0.01)) {
-            auto new_it = points.insert(it_1, *it - (*it_1 - *it) * n_dot_i / (*it_1 - *it).dot(normal));
-            if (new_it == points.begin()) {
-                break;
-            } else {
-                it = it_1;
-            }
-        } else {
-            ++it;
-        }
-    }
-    for (auto it = points.begin(); it != points.end();) {
-        if ((*it - plane_point).dot(normal) < -0.01) {
-            it = points.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
 void intersect_points_with_cone(list<Eigen::Vector3f> &points, const cone &cone) {
     intersect_points_with_plane(points, cone.c, cone.n_r);
     intersect_points_with_plane(points, cone.c, cone.n_l);
@@ -229,14 +199,12 @@ void add_all_lines(vector<Eigen::Vector3f> &points, voxel_map_pcl &line_voxels, 
 
 
             Eigen::Vector3f dv = points[j] - points[i];
-            vector<Eigen::Vector3d> pts;
-            double dv_norm = dv.norm();
-            dv = dv / dv_norm * 0.1;
-            for (int k = 0; k <= dv_norm / 0.1; k++) {
+            int steps = (int) round(dv.maxCoeff() / res);
+            dv /= steps;
+            for (int k = 0; k <= steps; k++) {
                 Eigen::Vector3f v = points[i] + dv * k;
-                pts.emplace_back(v[0], v[1], v[2]);
+                line_voxels.add_point(v);
             }
-            line_voxels.add_point_cloud(pts);
         }
     }
 }
@@ -286,27 +254,6 @@ void intersect_cones(const cone &cone_1, const cone &cone_2, voxel_map_pcl &line
     add_all_lines(points, line_voxels, line_list);
 }
 
-vector<marked_img_pt_pair_type> intersect_sorted_marked_img_pts(
-        const vector<marked_img_pt_type> &marked_img_pts_1,
-        const vector<marked_img_pt_type> &marked_img_pts_2) {
-    vector<marked_img_pt_pair_type> intersection;
-    auto it_1 = marked_img_pts_1.begin();
-    auto it_2 = marked_img_pts_2.begin();
-    while (it_1 != marked_img_pts_1.end() && it_2 != marked_img_pts_2.end()) {
-        if (get<0>(*it_1) < get<0>(*it_2)) {
-            ++it_1;
-        } else if (get<0>(*it_1) > get<0>(*it_2)) {
-            ++it_2;
-        } else {
-            intersection.emplace_back(get<0>(*it_1),
-                                      get<1>(*it_1), get<2>(*it_1), get<1>(*it_2), get<2>(*it_2));
-            ++it_1;
-            ++it_2;
-        }
-    }
-    return intersection;
-}
-
 void intersect_diagonals(vector<marked_diagonal_type> &cone_arrows,
                          const vector<marked_img_pt_type> &marked_img_pts, const Eigen::Affine3f &camera_pose) {
     auto it_1 = cone_arrows.begin();
@@ -317,10 +264,10 @@ void intersect_diagonals(vector<marked_diagonal_type> &cone_arrows,
         } else if (get<0>(*it_1) > get<0>(*it_2)) {
             ++it_2;
         } else {
-            Eigen::Vector3f P = camera_pose.translation();
-            Eigen::Vector3f C = get<1>(*it_1);
-            Eigen::Vector3f D = get<2>(*it_1);
-            Eigen::Vector3f a = D - C;
+            Eigen::Vector3f _p = camera_pose.translation();
+            Eigen::Vector3f _c = get<1>(*it_1);
+            Eigen::Vector3f _d = get<2>(*it_1);
+            Eigen::Vector3f a = _d - _c;
             Eigen::Vector3f v = to_vec_3d(get<1>(*it_2), get<2>(*it_2), camera_pose.rotation());
             Eigen::Vector3f r = a.cross(v);
             double r_norm = r.norm();
@@ -333,18 +280,18 @@ void intersect_diagonals(vector<marked_diagonal_type> &cone_arrows,
                 double cylinder_rad = 0.1;
                 double ctg = tan(M_PI_2 - asin(r_norm / (a_norm * v_norm)));
                 double delta = cylinder_rad * ctg / a_norm;
-                double base = (P - C).dot(g) / (r_norm * r_norm);
+                double base = (_p - _c).dot(g) / (r_norm * r_norm);
 
-                Eigen::Vector3f L = C + base * a;
-                Eigen::Vector3f dL = delta * a;
-                Eigen::Vector3f L1 = L + dL;
-                Eigen::Vector3f L2 = L - dL;
+                Eigen::Vector3f _l = _c + base * a;
+                Eigen::Vector3f dl = delta * a;
+                Eigen::Vector3f _l1 = _l + dl;
+                Eigen::Vector3f _l2 = _l - dl;
 
-                if ((L1 - C).dot(a) > 0 && (L1 - D).dot(a) < 0) {
-                    get<1>(*it_1) = L1;
+                if ((_l1 - _c).dot(a) > 0 && (_l1 - _d).dot(a) < 0) {
+                    get<1>(*it_1) = _l1;
                 }
-                if ((L2 - C).dot(a) > 0 && (L2 - D).dot(a) < 0) {
-                    get<2>(*it_1) = L2;
+                if ((_l2 - _c).dot(a) > 0 && (_l2 - _d).dot(a) < 0) {
+                    get<2>(*it_1) = _l2;
                 }
             }
 
@@ -371,42 +318,6 @@ Eigen::Matrix3f compute_rotation(double axis_z_0, double axis_z_1, double axis_z
     return rotation;
 }
 
-void append_marker_array_msg(const Eigen::Vector3f &v1, const Eigen::Vector3f &v2,
-                             double r, double g, double b, double x, double y, bool pointer,
-                             visualization_msgs::MarkerArray &marker_array_msg) {
-    static int id = 0;
-    visualization_msgs::Marker arrow;
-    arrow.header.frame_id = "map";
-    arrow.header.stamp = ros::Time::now();
-    arrow.ns = "/arrows";
-    arrow.id = id++;
-    arrow.type = visualization_msgs::Marker::ARROW;
-    arrow.action = visualization_msgs::Marker::ADD;
-    arrow.pose.orientation.w = 1.0;
-    arrow.scale.x = x;
-    arrow.scale.y = y;
-    if (pointer) {
-        arrow.scale.z = 0.0;
-    } else {
-        arrow.scale.z = 0.01;
-    }
-    arrow.color.r = r;
-    arrow.color.g = g;
-    arrow.color.b = b;
-    arrow.color.a = 1;
-
-    geometry_msgs::Point p;
-    p.x = v1[0];
-    p.y = v1[1];
-    p.z = v1[2];
-    arrow.points.push_back(p);
-    p.x = v2[0];
-    p.y = v2[1];
-    p.z = v2[2];
-    arrow.points.push_back(p);
-    marker_array_msg.markers.push_back(arrow);
-}
-
 void fill_cone_arrows_msg(vector<marked_diagonal_type> &cone_arrows, visualization_msgs::MarkerArray &cone_arrows_msg,
                           double r, double g, double b, double w) {
     for (const auto &cone_arrow : cone_arrows) {
@@ -421,15 +332,12 @@ void add_arrow_marker(const Eigen::Affine3f &camera_pose, visualization_msgs::Ma
 }
 
 void shade_diagonals(vector<marked_diagonal_type> &cone_arrows, sensor_msgs::PointCloud2 &arrow_voxels_msg) {
-//    voxel_map_pcl arrow_voxels(res);
     pcl::PointCloud<pcl::PointXYZ> arrow_voxels_pcl;
     for (const auto &cone_arrow : cone_arrows) {
         Eigen::Vector3f dv = get<2>(cone_arrow) - get<1>(cone_arrow);
         int steps = (int) round(dv.maxCoeff() / res);
         dv /= steps;
         for (int k = 0; k <= steps; k++) {
-//            arrow_voxels.add_point(Eigen::Vector3f(cone_arrows[i] + k * dv));
-
             Eigen::Vector3f v(get<1>(cone_arrow) + k * dv);
             pcl::PointXYZ p;
             p.x = round(v[0] / (float) res) * (float) res;
@@ -438,7 +346,6 @@ void shade_diagonals(vector<marked_diagonal_type> &cone_arrows, sensor_msgs::Poi
             arrow_voxels_pcl.points.push_back(p);
         }
     }
-//    auto arrow_voxels_pcl = arrow_voxels.get_voxel_cloud();
     arrow_voxels_pcl.width = arrow_voxels_pcl.size();
     arrow_voxels_pcl.height = 1;
     arrow_voxels_pcl.is_dense = true;
@@ -458,7 +365,7 @@ Eigen::Affine3f to_camera_pose(double axis_z_0, double axis_z_1, double axis_z_2
 
 void fill_marked_img_pts(vector<marked_img_pt_type> &marked_img_pts, const Eigen::Affine3f &camera_pose) {
     observer->set_camera_pose(camera_pose);
-    observer->render_to_marked_img_pts(marked_img_pts);
+    marked_img_pts = observer->render_to_marked_img_pts();
     sort(marked_img_pts.begin(), marked_img_pts.end());
 }
 
@@ -521,95 +428,17 @@ void fill_observed_map_msg(const vector<marked_img_pt_pair_type> &intersection,
     observed_map_msg.header.frame_id = "map";
 }
 
-struct cone_keeper {
-    cone_keeper() {
-        double pixel_cone_angle_2 = observer->get_pixel_cone_angle_2();
-        l_dir << -pixel_cone_angle_2, 1;
-        r_dir << +pixel_cone_angle_2, 1;
-        double cos_angle = cos(pixel_cone_angle_2);
-        double sin_angle = sin(pixel_cone_angle_2);
-        pixel_norm_l << sin_angle, +cos_angle, -cos_angle, sin_angle;
-        pixel_norm_r << sin_angle, -cos_angle, +cos_angle, sin_angle;
-    }
-
-    void update_marked_cones(const Eigen::Affine3f &camera_pose_1, const Eigen::Affine3f &camera_pose_2,
-                             const vector<marked_img_pt_pair_type> &pts_inter) {
-        for (const auto &pt : pts_inter) {
-            auto marked_cone_it = marked_cones.find(get<0>(pt));
-            marked_cone_value_type *cone_0;
-            if (marked_cone_it == marked_cones.end()) {
-                Eigen::Vector3f a = to_vec_3d(get<1>(pt), get<2>(pt), camera_pose_1.rotation()).normalized();
-                cone_0 = &marked_cones.insert({get<0>(pt),
-                                               {camera_pose_1.translation(), a, 0.01, 100}}).first->second;
-            } else {
-                cone_0 = &marked_cone_it->second;
-            }
-
-            Eigen::Vector3f C = get<0>(*cone_0);
-            Eigen::Vector3f P = camera_pose_2.translation();
-            Eigen::Vector3f a = get<1>(*cone_0);
-            Eigen::Vector3f v = to_vec_3d(get<3>(pt), get<4>(pt), camera_pose_2.rotation()).normalized();
-            Eigen::Vector3f r = a.cross(v).normalized();
-            Eigen::Vector3f b = a.cross(r);
-            Eigen::Matrix<float, 2, 3> camera_basis_2d;
-            camera_basis_2d << b[0], b[1], b[2], a[0], a[1], a[2];
-            Eigen::Vector2d P_ = (camera_basis_2d * (P - C)).cast<double>();
-            Eigen::Vector2d v_ = (camera_basis_2d * v * 100).cast<double>();
-
-            double h_1 = get<2>(*cone_0);
-            double h_2 = get<3>(*cone_0);
-            list<Eigen::Vector2d> points;
-            points.emplace_back(0, 0);
-            points.emplace_back(r_dir * h_2);
-            points.emplace_back(l_dir * h_2);
-
-            Eigen::Vector2d p_n_l = pixel_norm_l * v_;
-            Eigen::Vector2d p_n_r = pixel_norm_r * v_;
-            intersect_points_with_plane(points, P_, p_n_l);
-            intersect_points_with_plane(points, P_, p_n_r);
-
-            v_.normalize();
-            double min_c, max_c, min_p, max_p;
-            min_c = max_c = (*points.begin())[1];
-            min_p = max_p = (*points.begin() - P_).dot(v_);
-            for (auto it = ++points.begin(); it != points.end(); ++it) {
-                double d_c = (*it)[1];
-                double d_p = (*it - P_).dot(v_);
-                min_c = min(min_c, d_c);
-                min_p = min(min_p, d_p);
-                max_c = max(max_c, d_c);
-                max_p = max(max_p, d_p);
-            }
-            min_c = max(min_c, h_1);
-            double V_0 = h_2 * h_2 * (h_2 - h_1);
-            double V_c = max_c * max_c * (max_c - min_c);
-            double V_p = max_p * max_p * (max_p - min_p);
-            if (V_p <= V_c && V_p <= V_0) {
-                get<0>(*cone_0) = camera_pose_2.translation();
-                get<1>(*cone_0) = v;
-                get<2>(*cone_0) = min_p;
-                get<3>(*cone_0) = max_p;
-            } else if (V_c <= V_0) {
-                get<2>(*cone_0) = min_c;
-                get<3>(*cone_0) = max_c;
-            }
-        }
-    }
-
-    Eigen::Vector2d l_dir;
-    Eigen::Vector2d r_dir;
-    Eigen::Matrix2d pixel_norm_l;
-    Eigen::Matrix2d pixel_norm_r;
-
-    map<const Eigen::Vector3d *, marked_cone_value_type> marked_cones;
-};
-
-void fill_keeper_arrows_msg(const cone_keeper &cone_keeper_, visualization_msgs::MarkerArray &keeper_arrows_msg,
-                            double r, double g, double b, double w) {
-    for (auto it : cone_keeper_.marked_cones) {
-        Eigen::Vector3f v1 = get<0>(it.second) + get<1>(it.second) * get<2>(it.second);
-        Eigen::Vector3f v2 = get<0>(it.second) + get<1>(it.second) * get<3>(it.second);
-        append_marker_array_msg(v1, v2, r, g, b, w, w, false, keeper_arrows_msg);
+void fill_keeper_arrows_msg(cone_keeper &cone_keeper, visualization_msgs::MarkerArray &keeper_arrows_msg,
+                            double r, double g, double b) {
+    auto marked_cones = cone_keeper.get_marked_cones();
+    for (auto it : marked_cones) {
+        double h_1 = get<2>(it.second);
+        double h_2 = get<3>(it.second);
+        double l_1 = h_1 * pixel_cone_angle_2;
+        double l_2 = h_2 * pixel_cone_angle_2;
+        Eigen::Vector3f v1 = get<0>(it.second) + get<1>(it.second) * h_1;
+        Eigen::Vector3f v2 = get<0>(it.second) + get<1>(it.second) * h_2;
+        append_marker_array_msg(v1, v2, r, g, b, l_1, l_2, false, keeper_arrows_msg);
     }
 }
 
@@ -647,16 +476,18 @@ void prepare_msgs(sensor_msgs::PointCloud2 &observed_map_msg, sensor_msgs::Point
     auto t07 = ros::Time::now();
     fill_cone_arrows_msg(cone_arrows, inter_arrows_msg, 0, 1, 0, 0.1);
 
-    cone_keeper cone_keeper_123;
     auto t08 = ros::Time::now();
-    cone_keeper_123.update_marked_cones(camera_pose_1, camera_pose_2, pts_inter_12);
+    cone_keeper cone_keeper_123(pixel_cone_angle_2, observer->get_focal_distance(), image_w, image_h);
+    cone_keeper_123.add_marked_img_pts(camera_pose_1, move(marked_img_pts_1));
     auto t09 = ros::Time::now();
-    fill_keeper_arrows_msg(cone_keeper_123, keeper_arrows_12_msg, 0, 1, 1, 0.06);
+    cone_keeper_123.add_marked_img_pts(camera_pose_2, move(marked_img_pts_2));
     auto t10 = ros::Time::now();
-    cone_keeper_123.update_marked_cones(camera_pose_2, camera_pose_3, pts_inter_23);
+    fill_keeper_arrows_msg(cone_keeper_123, keeper_arrows_12_msg, 0, 1, 1);
     auto t11 = ros::Time::now();
-    fill_keeper_arrows_msg(cone_keeper_123, keeper_arrows_23_msg, 1, 0, 1, 0.08);
+    cone_keeper_123.add_marked_img_pts(camera_pose_3, move(marked_img_pts_3));
     auto t12 = ros::Time::now();
+    fill_keeper_arrows_msg(cone_keeper_123, keeper_arrows_23_msg, 1, 0, 1);
+    auto t13 = ros::Time::now();
 
     ROS_WARN("t_010 = %f", (t01 - t00).toSec() / 3);
     ROS_WARN("t_021 = %f", (t02 - t01).toSec() / 2);
@@ -670,13 +501,13 @@ void prepare_msgs(sensor_msgs::PointCloud2 &observed_map_msg, sensor_msgs::Point
     ROS_WARN("t_109 = %f", (t10 - t09).toSec());
     ROS_WARN("t_110 = %f", (t11 - t10).toSec());
     ROS_WARN("t_121 = %f", (t12 - t11).toSec());
+    ROS_WARN("t_132 = %f", (t13 - t12).toSec());
 
     fill_observed_map_msg(pts_inter_12, observed_map_msg);
 
     add_arrow_marker(camera_pose_1, z_arrows);
     add_arrow_marker(camera_pose_2, z_arrows);
     add_arrow_marker(camera_pose_3, z_arrows);
-
 }
 
 int main(int argc, char **argv) {
@@ -695,7 +526,7 @@ int main(int argc, char **argv) {
     ros::Publisher keeper_arrows_2_pub = node_handle.advertise<visualization_msgs::MarkerArray>("keeper_arrows_2", 1);
     ros::Publisher z_arrows_pub        = node_handle.advertise<visualization_msgs::MarkerArray>("z_arrows", 1);
 
-    double x_end, y_end, x_1, x_2, y_1, y_2, w_1, w_2, h_1, h_2, max_dist;
+    double x_end, y_end, x_1, x_2, y_1, y_2, w_1, w_2, h_1, h_2, density, max_dist;
     int obs_num, seed, fov_hor;
 
     node_handle.param("map_boundary/lower_x", x_1,      -50.0);
@@ -711,6 +542,7 @@ int main(int argc, char **argv) {
     node_handle.param("map/resolution",       res,        0.1);
     node_handle.param("map/obstacles_num",    obs_num,    600);
     node_handle.param("map/seed",             seed,       1);
+    node_handle.param("map/density",          density,    0.1);
 
     node_handle.param("camera/width",         image_w,    1280);
     node_handle.param("camera/height",        image_h,    960);
@@ -742,7 +574,6 @@ int main(int argc, char **argv) {
 //    for (int i = 0; i < 10 && ros::ok(); i++)
 //        rt.sleep();
 
-    double density = 0.1;
     marked_map_generator generator(x1_init, x_end, y1_init, y_end, x_1, x_2, y_1, y_2, h_1, h_2, w_1, w_2,
                                    res, density, obs_num, seed);
     generator.generate_map();
@@ -761,6 +592,7 @@ int main(int argc, char **argv) {
     auto marked_points = generator.get_marked_points_vectors();
     observer = new marked_map_observer(marked_points, shapes, image_w, image_h, fov_hor, max_dist);
     focal_distance = observer->get_focal_distance();
+    pixel_cone_angle_2 = observer->get_pixel_cone_angle_2();
 
     sensor_msgs::PointCloud2 observed_map_msg, cones_inter_msg, arrow_voxels_msg;
     visualization_msgs::Marker line_list;

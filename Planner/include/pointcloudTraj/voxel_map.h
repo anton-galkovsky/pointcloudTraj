@@ -15,7 +15,7 @@ public:
     void add_point_cloud(const Cont1 &pcl);
 
     template<class T>
-    void add_point(const T &point);
+    bool add_point(const T &point);
 
     const Cont2 &get_voxel_cloud();
 

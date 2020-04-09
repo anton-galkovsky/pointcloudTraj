@@ -30,7 +30,7 @@ img_map_observer::~img_map_observer() {
     delete[] image;
 }
 
-void img_map_observer::save_point(int x, int y, double d) {
+void img_map_observer::save_point(int x, int y, double d, shape_ptr_type) {
     image[y * image_width + x] = (float) d;
 }
 
@@ -49,7 +49,7 @@ const pcl::PointCloud<pcl::PointXYZ> *pcl_map_observer::render_to_pcl() {
     return &pcl;
 }
 
-void pcl_map_observer::save_point(int x, int y, double d) {
+void pcl_map_observer::save_point(int x, int y, double d, shape_ptr_type) {
     Eigen::Vector3d p = camera_translation + d *
                                              (((double) x / image_width - 0.5) / focal_distance * camera_axis_x +
                                               (y - 0.5 * image_height) / image_width / focal_distance * camera_axis_y +
@@ -89,7 +89,7 @@ img_pcl_map_observer::~img_pcl_map_observer() {
     delete[] image;
 }
 
-void img_pcl_map_observer::save_point(int x, int y, double d) {
+void img_pcl_map_observer::save_point(int x, int y, double d, shape_ptr_type) {
     image[y * image_width + x] = (float) d;
 
     Eigen::Vector3d p = camera_translation + d *
@@ -105,38 +105,61 @@ void img_pcl_map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
 }
 
 
-marked_map_observer::marked_map_observer(const vector<vector<Eigen::Vector3d>> &marked_points,
+marked_map_observer::marked_map_observer(vector<vector<Eigen::Vector3d>> marked_points,
                                          const vector<vector<Eigen::Vector3d>> &shapes_,
                                          int img_width, int img_height, int fov_hor, double max_distance_z) :
         map_observer(shapes_, img_width, img_height, fov_hor, max_distance_z),
-        marked_points(marked_points), marked_img_pts(nullptr) {
-    marks_image = new pair<const Eigen::Vector3d *, float>[img_width * img_height];
+        marked_points(move(marked_points)) {
+    marks_image = new tuple<const Eigen::Vector3d *, shape_ptr_type, float>[img_width * img_height];
     pixel_cone_angle_2 = 1 / (sqrt(2) * img_width * focal_distance);
+    image = new float[image_width * image_height];
+    actual_rendering_data = false;
 }
 
-void marked_map_observer::render_to_marked_img_pts(vector<tuple<const Eigen::Vector3d *, int, int>> &marked_img_pts_) {
-    for (int i = 0; i < image_width * image_height; i++) {
-        marks_image[i] = {nullptr, INFINITY};
+const float *marked_map_observer::render_to_img() {
+    if (!actual_rendering_data) {
+        actual_rendering_data = true;
+        for (int i = 0; i < image_width * image_height; i++) {
+            image[i] = INFINITY;
+        }
+        for (int i = 0; i < image_width * image_height; i++) {
+            marks_image[i] = {nullptr, nullptr, INFINITY};
+        }
+        marked_img_pts.clear();
+        render();
     }
-    marked_img_pts = &marked_img_pts_;
-    marked_img_pts->clear();
-    render();
+    return image;
+}
+
+const vector<tuple<const Eigen::Vector3d *, int, int>> &marked_map_observer::render_to_marked_img_pts() {
+    render_to_img();
+    return marked_img_pts;
 }
 
 marked_map_observer::~marked_map_observer() {
     delete[] marks_image;
+    delete[] image;
 }
 
-void marked_map_observer::save_point(int x, int y, double d) {
-    auto ptr = marks_image[y * image_width + x].first;
-    float dist = marks_image[y * image_width + x].second;
-    if (ptr != nullptr && abs(dist - d) < 0.05) {
-        marked_img_pts->emplace_back(ptr, x, y);
+void marked_map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
+    map_observer::set_camera_pose(camera_pose);
+    actual_rendering_data = false;
+}
+
+void marked_map_observer::save_point(int x, int y, double d, shape_ptr_type shape_ptr) {
+    image[y * image_width + x] = (float) d;
+
+    auto point_ptr = get<0>(marks_image[y * image_width + x]);
+    shape_ptr_type shape_ptr_ = get<1>(marks_image[y * image_width + x]);
+    if (point_ptr != nullptr && shape_ptr == shape_ptr_) {
+        marked_img_pts.emplace_back(point_ptr, x, y);
     }
 }
 
 void marked_map_observer::operate_marked(int shape_idx) {
-    for (const auto &point : marked_points[shape_idx]) {
+    const auto &shape_marked_points = marked_points[shape_idx];
+    shape_ptr_type shape_ptr = &shapes[shape_idx];
+    for (const auto &point : shape_marked_points) {
         Eigen::Vector3d delta = point - camera_translation;
         if (delta.dot(cone_normals[0]) < -0.01 ||
             delta.dot(cone_normals[1]) < -0.01 ||
@@ -154,8 +177,8 @@ void marked_map_observer::operate_marked(int shape_idx) {
         if (img_y >= image_height || img_y < 0) {
             continue;
         }
-        if (distance_z < marks_image[img_y * image_width + img_x].second) {
-            marks_image[img_y * image_width + img_x] = {&point, distance_z};
+        if (distance_z < get<2>(marks_image[img_y * image_width + img_x])) {
+            marks_image[img_y * image_width + img_x] = {&point, shape_ptr, distance_z};
         }
     }
 }
@@ -179,7 +202,7 @@ inline double intermediate_distance(int i, int n, double v0_dist, double v1_dist
     return v0_dist * v1_dist / (v1_dist + (v0_dist - v1_dist) * i / n);
 }
 
-inline double intermediate_distance(int x_cur, const segment_type *segment) {
+inline double intermediate_distance(int x_cur, const marked_segment_type *segment) {
     return intermediate_distance(x_cur - get<0>(*segment),
                                  get<2>(*segment) - get<0>(*segment),
                                  get<1>(*segment),
@@ -378,12 +401,13 @@ void map_observer::render() {
 
     for (int y = 0; y < image_height; y++) {
 //        ros::Time t2 = ros::Time::now();
-        vector<segment_type> segments;
+        vector<marked_segment_type> segments;
         if (line_segments[y].empty()) {
             continue;
         }
         for (auto segment : line_segments[y]) {
-            segments.push_back(segment.second);
+            segments.emplace_back(get<0>(segment.second), get<1>(segment.second),
+                                  get<2>(segment.second), get<3>(segment.second), segment.first);
         }
 //        ros::Time t3 = ros::Time::now();
 //        t[1] += (t3 - t2).toSec();
@@ -391,7 +415,7 @@ void map_observer::render() {
 //        ros::Time t4 = ros::Time::now();
 //        t[2] += (t4 - t3).toSec();
 
-        list<segment_type *> segments_list;
+        list<marked_segment_type *> segments_list;
         auto *cur_segment = &segments[0];
         int x_cur = get<0>(segments[0]);
         int x_next;
@@ -462,7 +486,7 @@ void map_observer::render() {
 
 //            ros::Time t7 = ros::Time::now();
             for (; x_cur < x_next; x_cur++) {
-                save_point(x_cur, y, intermediate_distance(x_cur, cur_segment));
+                save_point(x_cur, y, intermediate_distance(x_cur, cur_segment), get<4>(*cur_segment));
             }
 //            ros::Time t8 = ros::Time::now();
 //            t[6] += (t8 - t7).toSec();

@@ -10,7 +10,7 @@
     <node name="sim_planning_demo" type="sim_planning_demo" pkg="pointcloudTraj" output="screen" required="true">
         <remap from="~waypoints"                  to="/waypoint_generator/waypoints"/>
         <remap from="~odometry"                   to="/odom/fake_odom" />
-        <remap from="~PointCloud"                 to="/optical_sensor/observed_map"/>
+        <remap from="~PointCloud"                 to="/camera_sensor/observed_map"/>
         <remap from="~position"                   to="/position_cmd"   />
 
         <param name="mapBoundary/lower_x"         value="-50.0"        />
@@ -33,10 +33,10 @@
         <param name="planParam/stop_horizon"      value="  2.0"        />
         <param name="planParam/commitTime"        value="  5.0"        />
 
-        <param name="dynamic/vec"                 value="  8.0"        />
-        <param name="dynamic/acc"                 value="  4.0"        />
-        <param name="dynamic/max_vec"             value="  4.0"        />
-        <param name="dynamic/max_acc"             value="  2.5"        />
+        <param name="dynamic/vec"                 value="  3.0"        />  <!--8.0-->
+        <param name="dynamic/acc"                 value="  1.7"        />  <!--4.0-->
+        <param name="dynamic/max_vec"             value="  4.0"        />  <!--4.0-->
+        <param name="dynamic/max_acc"             value="  2.5"        />  <!--2.5-->
 
         <param name="optimization/poly_order_min" value="  4"          />  <!-- min order for the smallest piece of the trajectory -->
         <param name="optimization/poly_order_max" value="  8"          />  <!-- max order for the largest piece of the trajectory -->
@@ -81,18 +81,23 @@
         <param name="frame_id"                    value="map"          />
     </node>
 
-    <node name="optical_sensor" type="optical_sensor" pkg="pointcloudTraj" output="screen">
+    <node name="camera_sensor" type="camera_sensor" pkg="pointcloudTraj" output="screen">
         <remap from="~position"                   to="/position_cmd"   />
+        <remap from="~all_map"                    to="/map_provider/all_map"/>
         <remap from="~map_mesh"                   to="/map_provider/map_mesh"/>
-        <remap from="~observed_map"               to="/optical_sensor/observed_map"/>
-        <remap from="~observed_map_image"         to="/optical_sensor/observed_map_image"/>
+        <remap from="~marked_points"              to="/map_provider/marked_points"/>
+        <remap from="~observed_map"               to="/camera_sensor/observed_map"/>
+        <remap from="~observed_map_image"         to="/camera_sensor/observed_map_image"/>
+        <remap from="~keeper_arrows"              to="/camera_sensor/keeper_arrows"/>
 
-        <param name="map/resolution"              value="  0.3"        />
+        <param name="map/resolution"              value="  0.2"        />
+        <param name="map/known_radius"            value="  10"         />
 
-        <param name="camera/sense_rate"           value="  3.0"        />
-        <param name="camera/width"                value="  320"        />
-        <param name="camera/height"               value="  240"        />
+        <param name="camera/sense_rate"           value="  5.0"        />
+        <param name="camera/width"                value="  720"        />
+        <param name="camera/height"               value="  540"        />
         <param name="camera/fov_hor"              value="  90"         />
+        <param name="camera/max_dist"             value=" 20.0"        />
 
         <param name="copter/init_x"               value="$(arg init_x)"/>
         <param name="copter/init_y"               value="$(arg init_y)"/>
@@ -102,7 +107,9 @@
 
     <node name="map_provider" type="map_provider" pkg="pointcloudTraj" output="screen">
         <remap from="~all_map"                    to="/map_provider/all_map"/>
+        <remap from="~marked_map"                 to="/map_provider/marked_map"/>
         <remap from="~map_mesh"                   to="/map_provider/map_mesh"/>
+        <remap from="~marked_points"              to="/map_provider/marked_points"/>
 
         <param name="map_boundary/lower_x"        value="-50.0"        />
         <param name="map_boundary/upper_x"        value=" 50.0"        />
@@ -114,12 +121,14 @@
         <param name="obstacles/lower_h"           value="  1.0"        />
         <param name="obstacles/upper_h"           value=" 10.0"        />
 
-        <param name="map/resolution"              value="  0.3"        />
+        <param name="map/resolution"              value="  0.2"        />
         <param name="map/obstacles_num"           value="  600"        />
         <param name="map/seed"                    value="  1"          />
+        <param name="map/density"                 value="  0.2"        />
 
         <param name="copter/init_x"               value="$(arg init_x)"/>
         <param name="copter/init_y"               value="$(arg init_y)"/>
+        <param name="copter/init_z"               value="$(arg init_z)"/>
         <param name="copter/end_x"                value="$(arg end_x)" />
         <param name="copter/end_y"                value="$(arg end_y)" />
     </node>
@@ -141,6 +150,6 @@
     </node>
 
     <node name="rviz" type="rviz" pkg="rviz" output="screen"
-       args="-d $(find pointcloudTraj)/launch/rviz_config/rviz_config.rviz">
+       args="-d $(find pointcloudTraj)/launch/rviz_config/rviz_clean_demo_config.rviz">
     </node>
  </launch>

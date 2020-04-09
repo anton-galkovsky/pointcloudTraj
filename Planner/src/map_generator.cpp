@@ -1,4 +1,5 @@
 #include <random>
+#include <algorithm>
 #include "pointcloudTraj/map_generator.h"
 
 using namespace std;
@@ -71,13 +72,14 @@ void map_generator::generate_map() {
             emplace_rect_to_map(x_1, y_1, x_2, y_2, h);
         }
 
-        shapes.push_back(shape_cap1);
-        shapes.push_back(shape_cap2);
-
         emplace_rect_to_map(shape_cap1[0][0], shape_cap1[0][1],
                             shape_cap1[2][0], shape_cap1[2][1], 0);
         emplace_rect_to_map(shape_cap1[0][0], shape_cap1[0][1],
                             shape_cap1[2][0], shape_cap1[2][1], h);
+
+        reverse(shape_cap1.begin(), shape_cap1.end());
+        shapes.push_back(shape_cap1);
+        shapes.push_back(shape_cap2);
     }
 
     global_map_pcl.width = global_map_pcl.size();

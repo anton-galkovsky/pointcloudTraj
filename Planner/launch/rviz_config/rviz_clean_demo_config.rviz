@@ -14,7 +14,6 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /Basic1
         - /Map1
       Splitter Ratio: 0.522099018
     Tree Height: 636
@@ -44,7 +43,7 @@ Visualization Manager:
       Value: true
     - Class: rviz/Image
       Enabled: true
-      Image Topic: /optical_sensor/observed_map_image
+      Image Topic: /camera_sensor/observed_map_image
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -280,6 +279,44 @@ Visualization Manager:
       Name: visPlanning
     - Class: rviz/Group
       Displays:
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /camera_sensor/keeper_arrows
+          Name: KeeperArrows
+          Namespaces:
+            /arrows: true
+          Queue Size: 1
+          Value: true
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 0; 0; 0
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: MarkedMap
+          Position Transformer: XYZ
+          Queue Size: 1
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.13
+          Style: Boxes
+          Topic: /map_provider/marked_map
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -303,7 +340,7 @@ Visualization Manager:
           Queue Size: 1
           Selectable: true
           Size (Pixels): 3
-          Size (m): 0.2
+          Size (m): 0.12
           Style: Spheres
           Topic: /map_provider/all_map
           Unreliable: false
@@ -333,9 +370,9 @@ Visualization Manager:
           Queue Size: 1
           Selectable: true
           Size (Pixels): 6
-          Size (m): 0.3
+          Size (m): 0.15
           Style: Boxes
-          Topic: /optical_sensor/observed_map
+          Topic: /camera_sensor/observed_map
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
@@ -357,15 +394,15 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 45.0
+      Distance: 25.0
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -27.0
-        Y: -32.0
+        X: -37.0
+        Y: -39.0
         Z: 0.0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.0500000007
