@@ -56,10 +56,20 @@ target_link_libraries(traj_server
         ${catkin_LIBRARIES}
         ${PCL_LIBRARIES})
 
+add_executable(traj_postprocessing
+        src/traj_postprocessing.cpp
+        src/voxel_map.cpp
+        src/binomial_coefs.cpp)
+
+target_link_libraries(traj_postprocessing
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES})
+
 add_executable(camera_sensor
         src/camera_sensor.cpp
         src/map_observer.cpp
         src/cone_keeper.cpp
+        src/safety_controller.cpp
         src/utils.cpp)
 
 target_link_libraries(camera_sensor

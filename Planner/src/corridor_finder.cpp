@@ -5,7 +5,11 @@ using namespace Eigen;
 using namespace std;
 
 safeRegionRrtStar::safeRegionRrtStar( ){ 
-      cach_size  = 100;
+    cach_size  = 1;
+    cloud_empty = true;
+
+//    eng = default_random_engine(rd());
+    eng = default_random_engine(0);
 }
 
 safeRegionRrtStar::~safeRegionRrtStar(){ }
@@ -56,8 +60,7 @@ void safeRegionRrtStar::setPt( Vector3d startPt, Vector3d endPt, double xl, doub
     z_l = zl; z_h = zh;
 
     bias_l = 0.0; bias_h = 1.0;
-    
-    eng = default_random_engine(rd()) ;
+
     rand_x    = uniform_real_distribution<double>(x_l, x_h);
     rand_y    = uniform_real_distribution<double>(y_l, y_h);
     rand_z    = rand_z_in = uniform_real_distribution<double>(z_l + safety_margin, z_h); //lower bound: z_l --> z_l + safety_margin
@@ -88,8 +91,11 @@ void safeRegionRrtStar::setPt( Vector3d startPt, Vector3d endPt, double xl, doub
 }
 
 void safeRegionRrtStar::setInput(pcl::PointCloud<pcl::PointXYZ> cloud_in)
-{     
-    kdtreeForMap.setInputCloud( cloud_in.makeShared() );    
+{
+    cloud_empty = cloud_in.empty();
+    if (!cloud_empty) {
+        kdtreeForMap.setInputCloud(cloud_in.makeShared());
+    }
 }
 
 inline double safeRegionRrtStar::getDis(const NodePtr node1, const NodePtr node2){
@@ -108,6 +114,10 @@ inline double safeRegionRrtStar::radiusSearch( Vector3d & search_Pt)
 {     
     if(getDis(search_Pt, start_pt) > sample_range + max_radius )
        return max_radius - search_margin;
+
+    if (cloud_empty) {
+        return max_radius - search_margin;
+    }
 
     pcl::PointXYZ searchPoint;
     searchPoint.x = search_Pt(0);

@@ -477,7 +477,8 @@ void prepare_msgs(sensor_msgs::PointCloud2 &observed_map_msg, sensor_msgs::Point
     fill_cone_arrows_msg(cone_arrows, inter_arrows_msg, 0, 1, 0, 0.1);
 
     auto t08 = ros::Time::now();
-    cone_keeper cone_keeper_123(pixel_cone_angle_2, observer->get_focal_distance(), image_w, image_h);
+    cone_keeper cone_keeper_123(1, camera_pose_1.translation(),
+                                pixel_cone_angle_2, focal_distance, image_w, image_h);
     cone_keeper_123.add_marked_img_pts(camera_pose_1, move(marked_img_pts_1));
     auto t09 = ros::Time::now();
     cone_keeper_123.add_marked_img_pts(camera_pose_2, move(marked_img_pts_2));
@@ -589,9 +590,14 @@ int main(int argc, char **argv) {
     marked_map_msg.header.frame_id = "map";
 
     auto shapes = generator.get_shapes();
-    auto marked_points = generator.get_marked_points_vectors();
-    observer = new marked_map_observer(marked_points, shapes, image_w, image_h, fov_hor, max_dist);
-    focal_distance = observer->get_focal_distance();
+    vector<Eigen::Vector3d> marked_points_vec;
+    for (const auto &point : marked_map_pcl) {
+        marked_points_vec.emplace_back(point.x, point.y, point.z);
+    }
+    auto marked_point_indexes_arr = generator.get_marked_point_indexes_arr();
+    observer = new marked_map_observer(marked_point_indexes_arr, marked_points_vec, shapes,
+                                       image_w, image_h, fov_hor, max_dist);
+    focal_distance = map_observer::get_focal_distance(fov_hor);
     pixel_cone_angle_2 = observer->get_pixel_cone_angle_2();
 
     sensor_msgs::PointCloud2 observed_map_msg, cones_inter_msg, arrow_voxels_msg;

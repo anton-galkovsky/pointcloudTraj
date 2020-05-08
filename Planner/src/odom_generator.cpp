@@ -1,91 +1,70 @@
-#include <iostream>
-#include <math.h>
-#include <random>
-#include <eigen3/Eigen/Dense>
 #include <ros/ros.h>
 #include <ros/console.h>
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <visualization_msgs/MarkerArray.h>
-#include <visualization_msgs/Marker.h>
 #include <tf/tf.h>
-#include <tf/transform_datatypes.h>
-#include <tf/transform_broadcaster.h>
+#include <nav_msgs/Odometry.h>
 #include "quadrotor_msgs/PositionCommand.h"
 
-ros::Subscriber _cmd_sub;
-ros::Publisher  _odom_pub;
+static double x_init, y_init, z_init, yaw_init;
+static bool was_pos;
+static quadrotor_msgs::PositionCommand pos;
 
-quadrotor_msgs::PositionCommand _cmd;
-double _init_x, _init_y, _init_z;
-
-bool rcv_cmd = false;
-void rcvPosCmdCallBack(const quadrotor_msgs::PositionCommand cmd)
-{	
-	rcv_cmd = true;
-	_cmd    = cmd;
+template<class T>
+void copy_xyz(T &dest, double x, double y, double z) {
+    dest.x = x;
+    dest.y = y;
+    dest.z = z;
 }
 
-void pubOdom()
-{	
-	nav_msgs::Odometry odom;
-	odom.header.stamp    = ros::Time::now();
-	odom.header.frame_id = "uav";
+void prepare_odom(nav_msgs::Odometry &odom) {
+    odom.header.stamp = ros::Time::now();
+    odom.header.frame_id = "uav";
 
-	if(rcv_cmd)
-	{
-	    odom.pose.pose.position.x = _cmd.position.x;
-	    odom.pose.pose.position.y = _cmd.position.y;
-	    odom.pose.pose.position.z = _cmd.position.z;
-
-	    odom.twist.twist.linear.x = _cmd.velocity.x;
-	    odom.twist.twist.linear.y = _cmd.velocity.y;
-	    odom.twist.twist.linear.z = _cmd.velocity.z;
-
-	    odom.twist.twist.angular.x = _cmd.acceleration.x;
-	    odom.twist.twist.angular.y = _cmd.acceleration.y;
-	    odom.twist.twist.angular.z = _cmd.acceleration.z;
-	}
-	else
-	{
-		odom.pose.pose.position.x = _init_x;
-	    odom.pose.pose.position.y = _init_y;
-	    odom.pose.pose.position.z = _init_z;
-
-	    odom.twist.twist.linear.x = 0.0;
-	    odom.twist.twist.linear.y = 0.0;
-	    odom.twist.twist.linear.z = 0.0;
-
-	    odom.twist.twist.angular.x = 0.0;
-	    odom.twist.twist.angular.y = 0.0;
-	    odom.twist.twist.angular.z = 0.0;
-	}
-
-    _odom_pub.publish(odom);
-}
-
-int main (int argc, char** argv) 
-{        
-    ros::init (argc, argv, "odom_generator");
-    ros::NodeHandle nh( "~" );
-
-    nh.param("init_x", _init_x,  0.0);
-    nh.param("init_y", _init_y,  0.0);
-    nh.param("init_z", _init_z,  0.0);
-
-    _cmd_sub  = nh.subscribe( "command", 1, rcvPosCmdCallBack );
-    _odom_pub = nh.advertise<nav_msgs::Odometry>("odometry", 1);                      
-
-    ros::Rate rate(100);
-    bool status = ros::ok();
-    while(status) 
-    {
-		pubOdom();                   
-        ros::spinOnce();
-        status = ros::ok();
-        rate.sleep();
+    if (was_pos) {
+        odom.pose.pose.position = pos.position;
+        odom.twist.twist.linear = pos.velocity;
+        odom.twist.twist.angular = pos.acceleration;
+    } else {
+        copy_xyz(odom.pose.pose.position, x_init, y_init, z_init);
+        copy_xyz(odom.twist.twist.linear, 0, 0, 0);
+        copy_xyz(odom.twist.twist.angular, 0, 0, 0);
     }
 
-    return 0;
+    odom.pose.pose.orientation.w = yaw_init;
+}
+
+void position_callback(const quadrotor_msgs::PositionCommand pos_msg) {
+    was_pos = true;
+    pos = pos_msg;
+}
+
+int main(int argc, char **argv) {
+    ros::init(argc, argv, "odom generator");
+    ros::NodeHandle node_handle("~");
+
+    double x_end, y_end, rate;
+
+    node_handle.param("copter/init_x", x_init, -45.0);
+    node_handle.param("copter/init_y", y_init, -45.0);
+    node_handle.param("copter/init_z", z_init,   2.0);
+    node_handle.param("copter/end_x",  x_end,   30.0);
+    node_handle.param("copter/end_y",  y_end,   30.0);
+
+    node_handle.param("odom/rate",     rate,   100.0);
+
+    ros::Subscriber position_sub = node_handle.subscribe("position", 1, position_callback);
+
+    ros::Publisher odometry_pub = node_handle.advertise<nav_msgs::Odometry>("odometry", 1);
+
+    yaw_init = atan2(y_end - y_init, x_end - x_init);
+    was_pos = false;
+
+    nav_msgs::Odometry odometry_msg;
+
+    ros::Rate loop_rate(rate);
+    while (ros::ok()) {
+        prepare_odom(odometry_msg);
+        odometry_pub.publish(odometry_msg);
+        ros::spinOnce();
+        loop_rate.sleep();
+    }
 }

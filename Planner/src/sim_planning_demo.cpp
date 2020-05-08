@@ -16,7 +16,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <visualization_msgs/Marker.h>
 #include <quadrotor_msgs/PositionCommand.h>
-#include <quadrotor_msgs/PolynomialTrajectory.h>
+#include <quadrotor_msgs/PolynomialTrajectoryExtra.h>
 #include <std_msgs/Int8.h>
 
 #include "pointcloudTraj/mosek.h"
@@ -93,7 +93,7 @@ bool checkSafeTrajectory(double check_time);
 int trajGeneration(MatrixXd path, VectorXd radius, double time_odom_delay);
 Vector3d getCommitedTarget();
 VectorXd timeAllocation(MatrixXd sphere_centers, VectorXd sphere_radius, Vector3d init_vel );
-quadrotor_msgs::PolynomialTrajectory getBezierTraj();
+quadrotor_msgs::PolynomialTrajectoryExtra getBezierTraj();
 
 void visCommitTraj(MatrixXd polyCoeff);
 void visBezierTrajectory(MatrixXd polyCoeff);
@@ -150,8 +150,10 @@ void rcvOdometryCallBack(const nav_msgs::Odometry odom)
         return sqrt( sq(v[0] - u[0]) + sq(v[1] - u[1]) + sq(v[2] - u[2])  );
     };
 
-    if( _is_traj_exist && getDis(_start_pos, _commit_target) < _eps )
-        _is_target_arrive = true;
+    if( _is_traj_exist && getDis(_start_pos, _commit_target) < _eps ) {
+        _is_target_arrive = false;
+        _is_traj_exist = false;
+    }
 }
 
 void rcvPointCloudCallBack(const sensor_msgs::PointCloud2 & pointcloud_map )
@@ -159,7 +161,7 @@ void rcvPointCloudCallBack(const sensor_msgs::PointCloud2 & pointcloud_map )
     PointCloud<PointXYZ> cloud_input;      
     pcl::fromROSMsg(pointcloud_map, cloud_input);
 
-    if(cloud_input.points.size() == 0) return;
+//    if(cloud_input.points.size() == 0) return;
 
     _is_has_map = true;
     _rrtPathPlaner.setInput(cloud_input);
@@ -167,8 +169,8 @@ void rcvPointCloudCallBack(const sensor_msgs::PointCloud2 & pointcloud_map )
     {
         ROS_WARN("[Demo] Collision Occur, Stop");
         sendStatusCode(3);
-        quadrotor_msgs::PolynomialTrajectory traj;
-        traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE;
+        quadrotor_msgs::PolynomialTrajectoryExtra traj;
+        traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_WARN_IMPOSSIBLE;
         _traj_pub.publish(traj);
         _is_traj_exist = false;  
     }
@@ -241,7 +243,12 @@ int trajGeneration(MatrixXd path, VectorXd radius, double time_odom_delay)
     auto max_r = radius.maxCoeff();
 
     _poly_orderList.clear();
-    double d_order = (_poly_order_max - _poly_order_min ) / (max_r - min_r);
+    double d_order;
+    if (max_r > min_r + 0.01) {
+        d_order = (_poly_order_max - _poly_order_min ) / (max_r - min_r);
+    } else {
+        d_order = 0;
+    }
     
     for(int i =0; i < _segment_num; i ++ )
     {  
@@ -258,11 +265,11 @@ int trajGeneration(MatrixXd path, VectorXd radius, double time_odom_delay)
     ros::Time time_2 = ros::Time::now();
     ROS_WARN("[Demo] Time in traj generation is %f", (time_2 - time_1).toSec());
     
-    quadrotor_msgs::PolynomialTrajectory traj;
+    quadrotor_msgs::PolynomialTrajectoryExtra traj;
     if(_PolyCoeff.rows() == 3 && _PolyCoeff.cols() == 3){
         ROS_WARN("[Demo] Cannot find a feasible and optimal solution, somthing wrong with the mosek solver ... ");
         sendStatusCode(2);
-        traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE;
+        traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_WARN_IMPOSSIBLE;
         _traj_pub.publish(traj);
         _is_traj_exist     = false;
         _is_target_receive = false;
@@ -290,15 +297,30 @@ bool checkEndOfCommitedTraj()
 
 Eigen::Vector3d getCommitedTarget()
 {
-    double t_s = _time_commit;      
+//    double t_s = _time_commit;
 
-    int idx;
-    for (idx = 0; idx < _segment_num; ++idx){
-        if (t_s > _Time(idx) && idx + 1 < _segment_num)
-            t_s -= _Time(idx);
-        else break;
-    }          
-    t_s /= _Time(idx);
+//    int idx;
+//    for (idx = 0; idx < _segment_num; ++idx){
+//        if (t_s > _Time(idx) && idx + 1 < _segment_num)
+//            t_s -= _Time(idx);
+//        else break;
+//    }
+//    t_s /= _Time(idx);
+
+
+    double t_s = 1;
+    int idx = 0;
+    while (idx < _Path.rows()
+           && (_start_pos - Eigen::Vector3d(_Path(idx, 0), _Path(idx, 1), _Path(idx, 2))).norm()
+              > _Radius[idx]) {
+        idx++;
+    }
+    while (++idx < _Path.rows()
+           && (_start_pos - Eigen::Vector3d(_Path(idx, 0), _Path(idx, 1), _Path(idx, 2))).norm()
+              <= _Radius[idx]);
+    if (idx != _Time.size() - 1) {
+        idx++;  // next after cur sphere
+    }
 
     double t_start = t_s;
     Eigen::Vector3d coord_t;
@@ -332,8 +354,8 @@ void planInitialTraj()
     if( _rrtPathPlaner.getPathExistStatus() == false ){
         ROS_WARN("[Demo] Can't find a path, mission stall, please reset the target");
         sendStatusCode(1);
-        quadrotor_msgs::PolynomialTrajectory traj;
-        traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE;
+        quadrotor_msgs::PolynomialTrajectoryExtra traj;
+        traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_WARN_IMPOSSIBLE;
         _traj_pub.publish(traj);
         _is_traj_exist = false;
         _is_target_receive = false;
@@ -472,7 +494,7 @@ int main (int argc, char** argv)
     _odom_sub     = node_handle.subscribe( "odometry",   1, rcvOdometryCallBack );
 
     /*  publish traj msgs to traj_server  */
-    _traj_pub           = node_handle.advertise<quadrotor_msgs::PolynomialTrajectory>("trajectory", 10);
+    _traj_pub     = node_handle.advertise<quadrotor_msgs::PolynomialTrajectoryExtra>("poly_traj_extra",    10);
   
     /*  publish visualization msgs  */
     _vis_ctrl_pts_pub       = node_handle.advertise<visualization_msgs::MarkerArray>("trajectory_ctrl_pts", 1);
@@ -511,10 +533,10 @@ int main (int argc, char** argv)
     }
 }
 
-quadrotor_msgs::PolynomialTrajectory getBezierTraj()
+quadrotor_msgs::PolynomialTrajectoryExtra getBezierTraj()
 {
-    quadrotor_msgs::PolynomialTrajectory traj;
-    traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_ADD;
+    quadrotor_msgs::PolynomialTrajectoryExtra traj;
+    traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_ADD;
     traj.num_segment = _Time.size();
 
     int polyTotalNum = 0;
@@ -545,6 +567,10 @@ quadrotor_msgs::PolynomialTrajectory getBezierTraj()
 
     traj.time.resize(_Time.size());
     traj.order.resize(_Time.size());
+    traj.path_x.resize(_Path.rows() + 1);
+    traj.path_y.resize(_Path.rows() + 1);
+    traj.path_z.resize(_Path.rows() + 1);
+    traj.radii.resize(_Path.rows() + 1);
 
     traj.mag_coeff = 1.0;
 
@@ -552,12 +578,23 @@ quadrotor_msgs::PolynomialTrajectory getBezierTraj()
         traj.time[idx] = _Time(idx);
         traj.order[idx] = _poly_orderList[idx];
     }
+
+    traj.path_x[0] = _Path(0, 0);
+    traj.path_y[0] = _Path(0, 1);
+    traj.path_z[0] = _Path(0, 2);
+    traj.radii[0] = _Radius(0);
+    for (int idx = 0; idx < _Path.rows(); ++idx) {
+        traj.path_x[idx + 1] = _Path(idx, 0);
+        traj.path_y[idx + 1] = _Path(idx, 1);
+        traj.path_z[idx + 1] = _Path(idx, 2);
+        traj.radii[idx + 1] = _Radius(idx);
+    }
     
     traj.start_yaw = 0.0;
     traj.final_yaw = 0.0;
 
     traj.trajectory_id = _traj_id;
-    traj.action = quadrotor_msgs::PolynomialTrajectory::ACTION_ADD;
+    traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_ADD;
 
     return traj;
 }

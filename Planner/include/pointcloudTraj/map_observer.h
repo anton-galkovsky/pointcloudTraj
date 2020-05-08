@@ -19,6 +19,8 @@ public:
 
     virtual void set_camera_pose(const Eigen::Affine3f &camera_pose);
 
+    static double get_focal_distance(double fov_hor);
+
 protected:
     map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
                  int img_width, int img_height, int fov_hor, double max_distance_z);
@@ -116,7 +118,8 @@ private:
 
 class marked_map_observer : public map_observer {
 public:
-    marked_map_observer(const std::vector<std::vector<Eigen::Vector3d>> marked_points,
+    marked_map_observer(std::vector<std::vector<int>> marked_point_indexes_arr,
+                        std::vector<Eigen::Vector3d> marked_points_vec,
                         const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
                         int img_width, int img_height, int fov_hor, double max_distance_z);
 
@@ -125,8 +128,6 @@ public:
     const std::vector<std::tuple<const Eigen::Vector3d *, int, int>> &render_to_marked_img_pts();
 
     const float *render_to_img();
-
-    double get_focal_distance();
 
     double get_pixel_cone_angle_2();
 
@@ -137,7 +138,8 @@ private:
 
     void operate_marked(int shape_idx) override;
 
-    std::vector<std::vector<Eigen::Vector3d>> marked_points;
+    std::vector<std::vector<int>> marked_point_indexes_arr;
+    std::vector<Eigen::Vector3d> marked_points_vec;
     std::vector<std::tuple<const Eigen::Vector3d *, int, int>> marked_img_pts;
     std::tuple<const Eigen::Vector3d *, shape_ptr_type, float> *marks_image;
 

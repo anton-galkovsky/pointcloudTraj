@@ -45,17 +45,17 @@ public:
 
     void generate_map() override;
 
-    std::vector<std::vector<Eigen::Vector3d>> get_marked_points_vectors();
+    std::vector<std::vector<int>> get_marked_point_indexes_arr();
 
     pcl::PointCloud<pcl::PointXYZ> get_marked_map_pcl();
 
 private:
-    void emplace_marked_rect(const std::vector<Eigen::Vector3d> &shape, voxel_map_pcl &marked_map);
+    void emplace_marked_rect(const std::vector<Eigen::Vector3d> &shape, voxel_value_map &marked_map);
 
     double res;
     double density;
     int seed;
 
-    std::vector<std::vector<Eigen::Vector3d>> marked_points;
+    std::vector<std::vector<int>> marked_point_indexes_arr;
     pcl::PointCloud<pcl::PointXYZ> marked_map_pcl;
 };

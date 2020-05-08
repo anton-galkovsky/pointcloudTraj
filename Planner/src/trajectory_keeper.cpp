@@ -2,6 +2,7 @@
 #include <pcl/common/distances.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <quadrotor_msgs/PositionCommand.h>
 
 using namespace std;
 
@@ -9,28 +10,14 @@ static string trajs_archive_file, var_traj_length_file;
 static pcl::PointCloud<pcl::PointXYZ> *cur_traj;
 static double cur_traj_len;
 
-void traj_com_pts_callback(const sensor_msgs::PointCloud2 &traj_msg) {
-    pcl::PointCloud<pcl::PointXYZ> traj_pcl;
-    pcl::fromROSMsg(traj_msg, traj_pcl);
+void position_callback(const quadrotor_msgs::PositionCommand &cmd) {
+    static pcl::PointXYZ last_pos(cmd.position.x, cmd.position.y, cmd.position.z);
 
-    for (pcl::PointXYZ point : traj_pcl.points) {
-        cur_traj->push_back(point);
-    }
+    pcl::PointXYZ pos(cmd.position.x, cmd.position.y, cmd.position.z);
+    cur_traj->push_back(pos);
 
-    ofstream fout(trajs_archive_file, ios::app);
-    fout << traj_pcl.size() << "\n";
-    for (pcl::PointXYZ point : traj_pcl.points) {
-        fout << point.x << " " << point.y << " " << point.z << "\n";
-    }
-    fout.close();
-
-    for (unsigned long i = 0; i < traj_pcl.size() - 1; i++) {
-        cur_traj_len += pcl::euclideanDistance(traj_pcl[i], traj_pcl[i + 1]);
-    }
-
-    fout.open(var_traj_length_file, ios::out);
-    fout << "TRAJ_LENGTH=" << cur_traj_len << "\n";
-    fout.close();
+    cur_traj_len += pcl::euclideanDistance(pos, last_pos);
+    last_pos = pos;
 }
 
 void prepare_cur_traj_msg(sensor_msgs::PointCloud2 &cur_traj_msg) {
@@ -43,11 +30,9 @@ int main(int argc, char **argv) {
     ros::init(argc, argv, "trajectory keeper");
     ros::NodeHandle node_handle("~");
 
-    ros::Subscriber traj_com_pts_sub =
-            node_handle.subscribe("trajectory_commit_points", 50, traj_com_pts_callback);
+    ros::Subscriber position_sub = node_handle.subscribe("position", 100, position_callback);
 
-    ros::Publisher cur_traj_pub =
-            node_handle.advertise<sensor_msgs::PointCloud2>("current_trajectory", 1);
+    ros::Publisher cur_traj_pub = node_handle.advertise<sensor_msgs::PointCloud2>("current_trajectory", 1);
 
     node_handle.param("files/trajs_archive",
                       trajs_archive_file, string("/home/galanton/catkin_ws/trajectory_archive"));
@@ -68,6 +53,16 @@ int main(int argc, char **argv) {
         ros::spinOnce();
         loop_rate.sleep();
     }
+
+    ofstream fout(trajs_archive_file, ios::app);
+    for (auto it : cur_traj->points) {
+        fout << it.x << " " << it.x << " " << it.x << "\n";
+    }
+    fout.close();
+
+    fout.open(var_traj_length_file, ios::out);
+    fout << "TRAJ_LENGTH=" << cur_traj_len << "\n";
+    fout.close();
 
     delete cur_traj;
 }

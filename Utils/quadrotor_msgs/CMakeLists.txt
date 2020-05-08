@@ -30,6 +30,8 @@ add_message_files(
   TRPYCommand.msg
   Odometry.msg
   PolynomialTrajectory.msg
+  PolynomialTrajectoryExtra.msg
+  PolynomialTrajectoryYawed.msg
   OptimalTimeAllocator.msg
   TrajectoryMatrix.msg
   ReplanCheck.msg

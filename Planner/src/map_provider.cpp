@@ -25,6 +25,19 @@ void prepare_polygon_mesh_msg(const vector<vector<Eigen::Vector3d>> &polygons,
     pcl::toROSMsg(polygon_mesh_pcl, polygon_mesh_msg.cloud);
 }
 
+void prepare_polygon_mesh_msg(const vector<vector<int>> &map_indexes_arr,
+                              const pcl::PointCloud<pcl::PointXYZ> &map_pcl,
+                              pcl_msgs::PolygonMesh &polygon_mesh_msg) {
+    for (const auto &map_indexes : map_indexes_arr) {
+        pcl_msgs::Vertices polygon_indexes;
+        for (auto index : map_indexes) {
+            polygon_indexes.vertices.push_back(index);
+        }
+        polygon_mesh_msg.polygons.push_back(polygon_indexes);
+    }
+    pcl::toROSMsg(map_pcl, polygon_mesh_msg.cloud);
+}
+
 int main(int argc, char **argv) {
     ros::init(argc, argv, "map provider");
     ros::NodeHandle node_handle("~");
@@ -76,9 +89,9 @@ int main(int argc, char **argv) {
     pcl_msgs::PolygonMesh map_mesh_msg;
     prepare_polygon_mesh_msg(shapes, map_mesh_msg);
 
-    auto marked_points = generator.get_marked_points_vectors();
+    auto marked_point_indexes_arr = generator.get_marked_point_indexes_arr();
     pcl_msgs::PolygonMesh marked_points_msg;
-    prepare_polygon_mesh_msg(marked_points, marked_points_msg);
+    prepare_polygon_mesh_msg(marked_point_indexes_arr, marked_map_pcl, marked_points_msg);
 
     ros::Rate loop_rate(5);
     for (int i = 0; i < 50 && ros::ok(); i++) {

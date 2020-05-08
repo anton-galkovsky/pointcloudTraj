@@ -7,7 +7,7 @@
 #include <tf/tf.h>
 #include <tf/transform_datatypes.h>
 #include <nav_msgs/Odometry.h>
-#include <quadrotor_msgs/PolynomialTrajectory.h>
+#include <quadrotor_msgs/PolynomialTrajectoryYawed.h>
 #include <quadrotor_msgs/PositionCommand.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -22,6 +22,30 @@ const int  _DIM_z = 2;
 using namespace std;
 
 int _poly_order_min, _poly_order_max;
+double yaw_incr;
+
+void update_yaw(double &yaw, double t, double next_yaw) {
+    if (next_yaw > 4) {
+        return;
+    }
+    if (abs(yaw - next_yaw) >= M_PI) {
+        if (yaw < 0) {
+            yaw += 2 * M_PI;
+        } else {
+            next_yaw += 2 * M_PI;
+        }
+    }
+
+    if (abs(next_yaw - yaw) < yaw_incr) {
+        yaw = next_yaw;
+    } else {
+        yaw += yaw_incr * (next_yaw > yaw ? 1 : -1);
+    }
+
+    if (yaw > M_PI) {
+        yaw -= 2 * M_PI;
+    }
+}
 
 class TrajectoryServer
 {
@@ -46,6 +70,9 @@ private:
     Eigen::VectorXd _time;
     Eigen::MatrixXd _coef[3];
     vector<int> _order;
+
+    vector<double> end_yaws;
+    vector<double> middle_yaws;
 
     double _vis_traj_width = 0.2;
     double mag_coeff;
@@ -149,6 +176,8 @@ public:
         {
             //ROS_WARN("[TRAJ SERVER] Pub initial pos command");
             _cmd.position   = _odom.pose.pose.position;
+
+            _cmd.yaw = _odom.pose.pose.orientation.w;
             
             if(!cmd_flag)
                 _cmd.position.z =  1.5;
@@ -186,13 +215,13 @@ public:
         }
     }
 
-    void rcvTrajectoryCallabck(const quadrotor_msgs::PolynomialTrajectory & traj)
+    void rcvTrajectoryCallabck(const quadrotor_msgs::PolynomialTrajectoryYawed & traj)
     {
         //ROS_WARN("[SERVER] Recevied The Trajectory with %.3lf.", _start_time.toSec());
         //ROS_WARN("[SERVER] Now the odom time is : ");
         // #1. try to execuse the action
         
-        if (traj.action == quadrotor_msgs::PolynomialTrajectory::ACTION_ADD)
+        if (traj.action == quadrotor_msgs::PolynomialTrajectoryYawed::ACTION_ADD)
         {   
             ROS_WARN("[SERVER] Loading the trajectory.");
             if ((int)traj.trajectory_id < _traj_id) return ;
@@ -216,6 +245,9 @@ public:
             _final_yaw = traj.final_yaw;
             mag_coeff  = traj.mag_coeff;
 
+            end_yaws = traj.end_yaws;
+            middle_yaws = traj.middle_yaws;
+
             int max_order = *max_element( begin( _order ), end( _order ) ); 
             
             _coef[_DIM_x] = MatrixXd::Zero(max_order + 1, _n_segment);
@@ -238,13 +270,13 @@ public:
                 shift += (order + 1);
             }
         }
-        else if (traj.action == quadrotor_msgs::PolynomialTrajectory::ACTION_ABORT) 
+        else if (traj.action == quadrotor_msgs::PolynomialTrajectoryYawed::ACTION_ABORT)
         {
             ROS_WARN("[SERVER] Aborting the trajectory.");
             state = HOVER;
             _traj_flag = quadrotor_msgs::PositionCommand::TRAJECTORY_STATUS_COMPLETED;
         }
-        else if (traj.action == quadrotor_msgs::PolynomialTrajectory::ACTION_WARN_IMPOSSIBLE)
+        else if (traj.action == quadrotor_msgs::PolynomialTrajectoryYawed::ACTION_WARN_IMPOSSIBLE)
         {
             state = HOVER;
             _traj_flag = quadrotor_msgs::PositionCommand::TRAJECTORY_STATUS_IMPOSSIBLE;
@@ -286,8 +318,8 @@ public:
 
             //cout<<"t: "<<t<<endl; 
             _cmd.yaw_dot = 0.0;
-            _cmd.yaw = _start_yaw + (_final_yaw - _start_yaw) * t 
-                / ((_final_time - _start_time).toSec() + 1e-9);
+//            _cmd.yaw = _start_yaw + (_final_yaw - _start_yaw) * t
+//                / ((_final_time - _start_time).toSec() + 1e-9);
 
             // #3. calculate the desired states
             //ROS_WARN("[SERVER] the time : %.3lf\n, n = %d, m = %d", t, _n_order, _n_segment);
@@ -298,7 +330,13 @@ public:
                     t -= _time[idx];
                 }
                 else
-                {   
+                {
+                    if (t / _time[idx] < 0.5) {
+                        update_yaw(_cmd.yaw, 0.5 * _time[idx] - t, middle_yaws[idx]);
+                    } else {
+                        update_yaw(_cmd.yaw, _time[idx] - t, end_yaws[idx]);
+                    }
+
                     t /= _time[idx];
 
                     _cmd.position.x = 0.0;
@@ -450,8 +488,15 @@ int main(int argc, char ** argv)
     ros::init(argc, argv, "gradient_trajectory_server_node");
     ros::NodeHandle handle("~");
 
+    double odom_rate, yaw_rate;
+
     handle.param("optimization/poly_order_min", _poly_order_min,  5);
     handle.param("optimization/poly_order_max", _poly_order_max,  10);
+    handle.param("odom/rate",                    odom_rate,       100.0);
+    handle.param("copter/yaw_rt",                yaw_rate,        90.0);
+
+    yaw_incr = M_PI / 180 * yaw_rate / odom_rate;
+
     TrajectoryServer server(handle);
 
     Bernstein _bernstein;

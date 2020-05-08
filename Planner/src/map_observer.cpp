@@ -8,7 +8,7 @@ using namespace std;
 
 map_observer::plane_convex_shape::plane_convex_shape(const vector<Eigen::Vector3d> &sp_points) {
     spatial_points = sp_points;
-    normal = (spatial_points[1] - spatial_points[0]).cross(spatial_points[2] - spatial_points[1]);
+    normal = (spatial_points[1] - spatial_points[0]).cross(spatial_points[2] - spatial_points[1]).normalized();
 }
 
 
@@ -105,11 +105,12 @@ void img_pcl_map_observer::set_camera_pose(const Eigen::Affine3f &camera_pose) {
 }
 
 
-marked_map_observer::marked_map_observer(vector<vector<Eigen::Vector3d>> marked_points,
+marked_map_observer::marked_map_observer(vector<vector<int>> marked_point_indexes_arr,
+                                         vector<Eigen::Vector3d> marked_points_vec,
                                          const vector<vector<Eigen::Vector3d>> &shapes_,
                                          int img_width, int img_height, int fov_hor, double max_distance_z) :
         map_observer(shapes_, img_width, img_height, fov_hor, max_distance_z),
-        marked_points(move(marked_points)) {
+        marked_point_indexes_arr(move(marked_point_indexes_arr)), marked_points_vec(move(marked_points_vec)) {
     marks_image = new tuple<const Eigen::Vector3d *, shape_ptr_type, float>[img_width * img_height];
     pixel_cone_angle_2 = 1 / (sqrt(2) * img_width * focal_distance);
     image = new float[image_width * image_height];
@@ -157,9 +158,11 @@ void marked_map_observer::save_point(int x, int y, double d, shape_ptr_type shap
 }
 
 void marked_map_observer::operate_marked(int shape_idx) {
-    const auto &shape_marked_points = marked_points[shape_idx];
+    auto normal = shapes[shape_idx].normal;
+    const auto &marked_point_indexes = marked_point_indexes_arr[shape_idx];
     shape_ptr_type shape_ptr = &shapes[shape_idx];
-    for (const auto &point : shape_marked_points) {
+    for (int index : marked_point_indexes) {
+        const auto &point = marked_points_vec[index];
         Eigen::Vector3d delta = point - camera_translation;
         if (delta.dot(cone_normals[0]) < -0.01 ||
             delta.dot(cone_normals[1]) < -0.01 ||
@@ -167,6 +170,10 @@ void marked_map_observer::operate_marked(int shape_idx) {
             delta.dot(cone_normals[3]) < -0.01) {
             continue;
         }
+        if (delta.dot(normal) > -0.2 * delta.norm()) {
+            continue;
+        }
+
         double distance_z = max(delta.dot(camera_axis_z), 0.01);
         double scale = focal_distance / distance_z * image_width;
         int img_x = (int) round(delta.dot(camera_axis_x) * scale + image_width / 2.0);
@@ -183,10 +190,6 @@ void marked_map_observer::operate_marked(int shape_idx) {
     }
 }
 
-double marked_map_observer::get_focal_distance() {
-    return focal_distance;
-}
-
 double marked_map_observer::get_pixel_cone_angle_2() {
     return pixel_cone_angle_2;
 }
@@ -194,6 +197,9 @@ double marked_map_observer::get_pixel_cone_angle_2() {
 void map_observer::operate_marked(int) {
 }
 
+double map_observer::get_focal_distance(double fov_hor) {
+    return 0.5 / tan(fov_hor / 2.0 * M_PI / 180);
+}
 
 inline double intermediate_distance(int i, int n, double v0_dist, double v1_dist) {
     if (n == 0) {

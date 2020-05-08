@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <set>
+#include <map>
 #include <array>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -25,6 +26,20 @@ public:
 private:
     std::set<std::array<int, 3>> map;
     Cont2 voxel_cloud;
+    double res;
+};
+
+class voxel_value_map {
+public:
+    explicit voxel_value_map(double res);
+
+    int add_point(const Eigen::Vector3d &point);
+
+    const pcl::PointCloud<pcl::PointXYZ> &get_voxel_cloud();
+
+private:
+    std::map<std::array<int, 3>, int> map;
+    pcl::PointCloud<pcl::PointXYZ> voxel_cloud;
     double res;
 };
 

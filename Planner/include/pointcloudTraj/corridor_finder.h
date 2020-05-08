@@ -21,6 +21,8 @@ class safeRegionRrtStar
 		pcl::search::KdTree<pcl::PointXYZ> kdtreeAddMap;
 		pcl::search::KdTree<pcl::PointXYZ> kdtreeDelMap;
 		//pcl::PointCloud<pcl::PointXYZ> CloudIn;
+
+		bool cloud_empty;
 		
 		kdtree * kdTree_; // dynamic light-weight Kd-tree, for organizing the nodes in the exploring tree
 

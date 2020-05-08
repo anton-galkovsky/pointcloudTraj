@@ -41,8 +41,16 @@ void append_marker_array_msg(const Eigen::Vector3f &v1, const Eigen::Vector3f &v
     arrow.type = visualization_msgs::Marker::ARROW;
     arrow.action = visualization_msgs::Marker::ADD;
     arrow.pose.orientation.w = 1.0;
-    arrow.scale.x = x;
-    arrow.scale.y = y;
+    if (x < 0.001) {
+        arrow.scale.x = 0.05;
+    } else {
+        arrow.scale.x = x;
+    }
+    if (y < 0.001) {
+        arrow.scale.y = 0.05;
+    } else {
+        arrow.scale.y = y;
+    }
     if (pointer) {
         arrow.scale.z = 0.0;
     } else {

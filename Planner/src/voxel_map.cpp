@@ -57,6 +57,26 @@ Cont2 voxel_map<Cont2>::to_voxel_cloud(const Cont1 &pcl, double res) {
     return map.get_voxel_cloud();
 }
 
+voxel_value_map::voxel_value_map(double res) :
+        res(res) {
+}
+
+int voxel_value_map::add_point(const Eigen::Vector3d &point) {
+    int x = 0, y = 0, z = 0;
+    to_voxel_components(x, y, z, point, res);
+    ::map<array<int, 3>, int>::iterator it;
+    bool added;
+    tie(it, added) = map.insert({{x, y, z}, map.size()});
+    if (added) {
+        voxel_cloud.emplace_back(x * res, y * res, z * res);
+    }
+    return it->second;
+}
+
+const pcl::PointCloud<pcl::PointXYZ> &voxel_value_map::get_voxel_cloud() {
+    return voxel_cloud;
+}
+
 typedef pcl::PointCloud<pcl::PointXYZ> pcl_p;
 typedef vector<Eigen::Vector3d>        vec_d;
 typedef vector<Eigen::Vector3f>        vec_f;

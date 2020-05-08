@@ -24,7 +24,6 @@ void map_generator::generate_map() {
     uniform_real_distribution<double> random_y(y1, y2);
     uniform_real_distribution<double> random_h(h1, h2);
     uniform_real_distribution<double> random_w(w1, w2);
-    double resolution = 0.1;
 
     vector<Eigen::Vector3d> cylinders;
     for (int i = 0; i < num; i++) {
@@ -50,14 +49,16 @@ void map_generator::generate_map() {
         }
         cylinders.emplace_back(x, y, w);
 
+        h = round(h / res) * res;
+
         vector<Eigen::Vector3d> shape_cap1;
         vector<Eigen::Vector3d> shape_cap2;
         vector<Eigen::Vector3d> shape_element;
         for (int delta = 90, phi = delta / 2; phi < 360 + delta / 2; phi += delta) {
-            double x_1 = round((x + w * cos(M_PI / 180 * phi)) / resolution) * resolution;
-            double y_1 = round((y + w * sin(M_PI / 180 * phi)) / resolution) * resolution;
-            double x_2 = round((x + w * cos(M_PI / 180 * (phi + delta))) / resolution) * resolution;
-            double y_2 = round((y + w * sin(M_PI / 180 * (phi + delta))) / resolution) * resolution;
+            double x_1 = round((x + w * cos(M_PI / 180 * phi)) / res) * res;
+            double y_1 = round((y + w * sin(M_PI / 180 * phi)) / res) * res;
+            double x_2 = round((x + w * cos(M_PI / 180 * (phi + delta))) / res) * res;
+            double y_2 = round((y + w * sin(M_PI / 180 * (phi + delta))) / res) * res;
 
             shape_element.clear();
             shape_element.emplace_back(x_1, y_1, 0);
@@ -134,9 +135,9 @@ marked_map_generator::marked_map_generator(double x_init, double x_end, double y
 void marked_map_generator::generate_map() {
     map_generator::generate_map();
 
-    voxel_map_pcl marked_points_voxel_map(res);
+    voxel_value_map marked_points_voxel_map(res);
 
-    marked_points.clear();
+    marked_point_indexes_arr.clear();
     for (const auto &shape_element : shapes) {
         emplace_marked_rect(shape_element, marked_points_voxel_map);
     }
@@ -146,15 +147,15 @@ void marked_map_generator::generate_map() {
     marked_map_pcl.width = marked_map_pcl.size();
 }
 
-vector<vector<Eigen::Vector3d>> marked_map_generator::get_marked_points_vectors() {
-    return marked_points;
+vector<vector<int>> marked_map_generator::get_marked_point_indexes_arr() {
+    return marked_point_indexes_arr;
 }
 
 pcl::PointCloud<pcl::PointXYZ> marked_map_generator::get_marked_map_pcl() {
     return marked_map_pcl;
 }
 
-void marked_map_generator::emplace_marked_rect(const vector<Eigen::Vector3d> &shape, voxel_map_pcl &marked_map) {
+void marked_map_generator::emplace_marked_rect(const vector<Eigen::Vector3d> &shape, voxel_value_map &marked_map) {
     vector<Eigen::Vector3d> shape_marked_points;
 
     random_device rd;
@@ -179,7 +180,10 @@ void marked_map_generator::emplace_marked_rect(const vector<Eigen::Vector3d> &sh
         shape_marked_points.emplace_back(v_c + v_a * a + v_b * b);
     }
 
-    auto shape_marked_voxels = voxel_map_vec_d::to_voxel_cloud(shape_marked_points, res);
-    marked_points.push_back(shape_marked_voxels);
-    marked_map.add_point_cloud(shape_marked_voxels);
+    vector<int> shape_marked_voxel_indexes;
+    for (const auto& point : shape_marked_points) {
+        int index = marked_map.add_point(point);
+        shape_marked_voxel_indexes.push_back(index);
+    }
+    marked_point_indexes_arr.push_back(shape_marked_voxel_indexes);
 }
