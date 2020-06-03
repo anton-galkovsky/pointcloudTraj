@@ -118,7 +118,8 @@ add_executable(status_inspector
         src/status_inspector.cpp)
 
 target_link_libraries(status_inspector
-        ${catkin_LIBRARIES})
+        ${catkin_LIBRARIES}
+        ${PCL_LIBRARIES})
 
 add_executable(trajectories_comparison
         src/trajectories_comparison.cpp)

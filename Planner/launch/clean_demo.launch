@@ -1,13 +1,18 @@
 <launch>
-    <arg name="init_x" default="-10.0"/>
-    <arg name="init_y" default="-10.0"/>
-    <arg name="init_z" default="  2.0"/>
+    <arg name="init_x" default="-10.0" />
+    <arg name="init_y" default="-10.0" />
+    <arg name="init_z" default="  2.0" />
+    <arg name="end_x"  default="  9.0" />
+    <arg name="end_y"  default="  9.0" />
+    <arg name="end_z"  default="  2.0" />
 
-    <arg name="end_x"  default=" 10.0"/>
-    <arg name="end_y"  default=" 10.0"/>
-    <arg name="end_z"  default="  2.0"/>
-
-    <arg name="res"    default="  0.1"/>
+    <arg name="res"    default="  0.1" />
+    <arg name="seed"   default="  6"   />
+    <arg name="adjust" default="true" />
+<!--    <arg name="sens_t" default="lidar" />-->
+<!--    <arg name="sens_t" default="rgbd"  />-->
+    <arg name="sens_t" default="camera"/>
+    <arg name="f_arch" default="/home/galanton/catkin_ws/trajectory_archive"/>
 
     <node name="sim_planning_demo" type="sim_planning_demo" pkg="pointcloudTraj" output="screen" required="true">
         <remap from="~waypoints"                  to="/waypoint_generator/waypoints"/>
@@ -23,17 +28,17 @@
         <param name="mapBoundary/upper_z"         value="  4.0"        />
 
         <param name="planParam/plan_rate"         value=" 10.0"        />
-        <param name="planParam/safety_margin"     value="  0.5"        />
-        <param name="planParam/search_margin"     value="  0.0"        />
+        <param name="planParam/safety_margin"     value="  0.6"        />
+        <param name="planParam/search_margin"     value="  0.25"       />
         <param name="planParam/max_radius"        value="  1.5"        />
         <param name="planParam/sensing_range"     value=" 30.0"        />
         <param name="planParam/refine_portion"    value="  0.7"        />
         <param name="planParam/sample_portion"    value="  0.3"        />
-        <param name="planParam/goal_portion"      value="  0.05"       />
-        <param name="planParam/path_find_limit"   value="  0.2"        />
-        <param name="planParam/max_samples"       value="  50000"      />
+        <param name="planParam/goal_portion"      value="  0.1"        />
+        <param name="planParam/path_find_limit"   value="  0.6"        />
+        <param name="planParam/max_samples"       value="  200000"     />
         <param name="planParam/stop_horizon"      value="  2.0"        />
-        <param name="planParam/commitTime"        value="  10.0"       />
+        <param name="planParam/commitTime"        value=" 10.0"        />
 
         <param name="dynamic/vec"                 value="  0.5"        />  <!--3.0   8.0-->
         <param name="dynamic/acc"                 value="  1.0"        />  <!--1.7   4.0-->
@@ -67,6 +72,7 @@
         <param name="optimization/poly_order_max" value="  10"         />
         <param name="map/resolution"              value="$(arg res)"   />
         <param name="safety/twirl_len"            value="  1.5"        />
+        <param name="traj/rad_margin"             value="  0.0"        />
     </node>
 
     <node name="trajectory_server" type="traj_server" pkg="pointcloudTraj" output="screen">
@@ -78,7 +84,7 @@
         <param name="optimization/poly_order_max" value="  12"         />
 
         <param name="odom/rate"                   value="  100"        />
-        <param name="copter/yaw_rt"               value=" 90.0"        />
+        <param name="copter/yaw_rt"               value=" 20.0"        />
     </node>
 
     <node name="odom_generator" type="odom_generator" pkg="pointcloudTraj" output="screen">
@@ -122,7 +128,8 @@
         <remap from="~keeper_arrows"              to="/camera_sensor/keeper_arrows"/>
         <remap from="~safe_sphere"                to="/camera_sensor/safe_sphere"/>
 
-        <param name="traj/safe_rad"               value="  1.0"        />
+        <param name="traj/safe_rad"               value="  0.5"        />
+        <param name="traj/adjustable"             value="$(arg adjust)"/>
 
         <param name="map/resolution"              value="$(arg res)"   />
         <param name="map/empty_rad"               value="  2.0"        />
@@ -131,7 +138,10 @@
         <param name="camera/width"                value="  720"        />
         <param name="camera/height"               value="  540"        />
         <param name="camera/fov_hor"              value="  90"         />
-        <param name="camera/max_dist"             value=" 10.0"        />
+        <param name="camera/max_dist"             value=" 20.0"        />
+        <param name="camera/min_disp"             value="  2.0"        />
+        <param name="camera/window"               value="  3"          />
+        <param name="camera/sensor_type"          value="$(arg sens_t)"/>
 
         <param name="safety/img_width"            value="  120"        />
         <param name="safety/img_height"           value="  90"         />
@@ -155,14 +165,14 @@
         <param name="map_boundary/lower_y"        value="-15.0"        />
         <param name="map_boundary/upper_y"        value=" 15.0"        />
 
-        <param name="obstacles/lower_w"           value="  0.3"        />
-        <param name="obstacles/upper_w"           value="  1.0"        />
-        <param name="obstacles/lower_h"           value="  0.5"        />
-        <param name="obstacles/upper_h"           value="  5.0"        />
+        <param name="obstacles/lower_w"           value="  0.6"        />
+        <param name="obstacles/upper_w"           value="  2.0"        />
+        <param name="obstacles/lower_h"           value="  1.0"        />
+        <param name="obstacles/upper_h"           value="  8.0"        />
 
         <param name="map/resolution"              value="$(arg res)"   />
-        <param name="map/obstacles_num"           value="  100"        />
-        <param name="map/seed"                    value="  0"          />
+        <param name="map/obstacles_num"           value="  120"        />
+        <param name="map/seed"                    value="$(arg seed)"  />
         <param name="map/density"                 value="  0.2"        />
 
         <param name="copter/init_x"               value="$(arg init_x)"/>
@@ -176,15 +186,18 @@
         <remap from="~position"                   to="/position_cmd"   />
         <remap from="~current_trajectory"         to="/trajectory_keeper/current_trajectory"/>
 
-        <param name="files/trajs_archive"         value="/home/galanton/catkin_ws/trajectory_archive"/>
+        <param name="files/trajs_archive"         value="$(arg f_arch)"/>
         <param name="files/var_traj_length"       value="/home/galanton/catkin_ws/traj_length"/>
     </node>
 
-    <!--    <node name="status_inspector" type="status_inspector" pkg="pointcloudTraj" output="screen" required="true">-->
-    <node name="status_inspector" type="status_inspector" pkg="pointcloudTraj" output="screen">
+    <node name="status_inspector" type="status_inspector" pkg="pointcloudTraj" output="screen" required="true">
+<!--    <node name="status_inspector" type="status_inspector" pkg="pointcloudTraj" output="screen">-->
+        <remap from="~position"                   to="/position_cmd"   />
+        <remap from="~all_map"                    to="/map_provider/all_map"/>
         <remap from="~status_code"                to="/sim_planning_demo/status_code"/>
 
-        <param name="max_time_sec"                value="  120         "/>
+        <param name="max_time_sec"                value="  180"        />
+        <param name="traj/col_rad"                value="  0.2"        />
         <param name="files/var_exit_code"         value="/home/galanton/catkin_ws/exit_code"/>
     </node>
 

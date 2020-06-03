@@ -17,7 +17,7 @@ ros::Publisher poly_traj_pub, shift_ctrl_pts_pub, traj_segm_targ_pub, nearest_tr
 
 bool has_intact_traj;
 int poly_order_max;
-double res, twirl_len;
+double res, twirl_len, rad_margin;
 binomial_coefs bins;
 Eigen::Vector3d cur_pos, cur_vel;
 quadrotor_msgs::PolynomialTrajectoryExtra traj_extra;
@@ -285,12 +285,13 @@ void shift_cmd_callback(const geometry_msgs::Vector3 &shift_vec_msg) {
     traj_extra.coef_z[pts_num - 1] = next_pos[2];
 
 
-    Eigen::Vector3d rotation_axis = shift_vec.cross(cur_vel).cross(shift_vec).normalized();
+    Eigen::Vector3d rotation_axis = shift_vec.cross(next_pos - cur_pos).cross(shift_vec).normalized();
+    double safe_rad = max(0.0, radius - rad_margin);
     Eigen::Vector3d rotation_vec = shift_vec;
-    if (rotation_vec.norm() > radius) {
-        rotation_vec = rotation_vec.normalized() * radius;
-    } else if (rotation_vec.norm() < radius / 2) {
-        rotation_vec = rotation_vec.normalized() * radius / 2;
+    if (rotation_vec.norm() > safe_rad) {
+        rotation_vec = rotation_vec.normalized() * safe_rad;
+    } else if (rotation_vec.norm() < safe_rad * 0.75) {
+        rotation_vec = rotation_vec.normalized() * safe_rad * 0.75;
     }
 
     int circle_points_num = pts_num - 4;
@@ -376,6 +377,7 @@ int main(int argc, char **argv) {
     node_handle.param("optimization/poly_order_max", poly_order_max,   10);
     node_handle.param("map/resolution",              res,              0.1);
     node_handle.param("safety/twirl_len",            twirl_len,        1.5);
+    node_handle.param("traj/rad_margin",             rad_margin,       0.2);
 
     has_intact_traj = false;
 

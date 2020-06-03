@@ -10,11 +10,8 @@ void read_trajectories(const string &file, pcl::PointCloud<pcl::PointXYZ> &traj_
 
     ifstream fin(file);
     while (fin.good() && !fin.eof()) {
-        fin >> n;
-        for (int i = 0; i < n; i++) {
-            fin >> point.x >> point.y >> point.z;
-            traj_pcl.points.push_back(point);
-        }
+        fin >> point.x >> point.y >> point.z;
+        traj_pcl.points.push_back(point);
     }
     fin.close();
 }

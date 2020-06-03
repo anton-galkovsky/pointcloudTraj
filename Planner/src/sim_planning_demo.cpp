@@ -165,15 +165,16 @@ void rcvPointCloudCallBack(const sensor_msgs::PointCloud2 & pointcloud_map )
 
     _is_has_map = true;
     _rrtPathPlaner.setInput(cloud_input);
-    if(checkSafeTrajectory(_stop_time))
-    {
-        ROS_WARN("[Demo] Collision Occur, Stop");
-        sendStatusCode(3);
-        quadrotor_msgs::PolynomialTrajectoryExtra traj;
-        traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_WARN_IMPOSSIBLE;
-        _traj_pub.publish(traj);
-        _is_traj_exist = false;  
-    }
+    checkSafeTrajectory(_stop_time);
+//    if(checkSafeTrajectory(_stop_time))
+//    {
+//        ROS_WARN("[Demo] Collision Occur, Stop");
+//        sendStatusCode(3);
+//        quadrotor_msgs::PolynomialTrajectoryExtra traj;
+//        traj.action = quadrotor_msgs::PolynomialTrajectoryExtra::ACTION_WARN_IMPOSSIBLE;
+//        _traj_pub.publish(traj);
+//        _is_traj_exist = false;
+//    }
 }
 
 void corridorAugment(MatrixXd & path, VectorXd & radius, VectorXd & time)

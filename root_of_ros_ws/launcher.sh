@@ -3,19 +3,21 @@
 EXIT_NUM=(0 0 0 0 0 0)
 TOTAL_LENGTH=0.0
 
-echo " " > launcher_log
+ITER_NUM=$2
+
+printf "iter code length\n"
 
 trap "exit" INT
-for i in {1..300}
+for ((i=1;i<=ITER_NUM;i++))
 do
-	echo iteration ":" $i 
-	roslaunch pointcloudTraj clean_demo.launch &>> launcher_log
-
-	cat exit_code
-	cat traj_length
+	printf "%4d " $i
+	roslaunch pointcloudTraj clean_demo.launch $1 &>> launcher_log
 
 	source exit_code
 	source traj_length
+
+	printf "%4d " $EXIT_CODE
+	echo $TRAJ_LENGTH
 
 	EXIT_NUM[$EXIT_CODE]=$((${EXIT_NUM[$EXIT_CODE]}+1))
 
@@ -25,17 +27,12 @@ do
 	fi
 done
 
-for i in {0..5} 
-do
-	echo ${EXIT_NUM[i]}	
-done
+echo ${EXIT_NUM[0]} ${EXIT_NUM[1]} ${EXIT_NUM[2]} ${EXIT_NUM[3]} ${EXIT_NUM[4]} ${EXIT_NUM[5]}
 
 if [ "${EXIT_NUM[0]}" -ne 0 ]
 then
 	AVERAGE_LENGTH=$(echo "$TOTAL_LENGTH / ${EXIT_NUM[0]}" | bc -l)	
-	echo average = $AVERAGE_LENGTH
+	echo average : $AVERAGE_LENGTH
 else
-	echo average = 0
+	echo average : 0
 fi
-
-#roslaunch pointcloudTraj clean_demo.launch 2>&1 | tee out

@@ -1,31 +1,51 @@
 <launch>
+    <arg name="init_x" default="-10.0"/>
+    <arg name="init_y" default="-10.0"/>
+    <arg name="init_z" default="  2.0"/>
+
+    <arg name="end_x"  default="  9.0"/>
+    <arg name="end_y"  default="  9.0"/>
+    <arg name="end_z"  default="  2.0"/>
+
+    <arg name="res"    default="  0.1"/>
+    <arg name="seed"   default="  6"  />
+    <arg name="arch_1" default="/home/galanton/catkin_ws/trajectory_archive"/>
+    <arg name="arch_2" default="/home/galanton/catkin_ws/trajectory_archive"/>
+
     <node name="map_provider" type="map_provider" pkg="pointcloudTraj" output="screen">
-        <param name="map_boundary/lower_x" value="-50.0"/>
-        <param name="map_boundary/upper_x" value=" 50.0"/>
-        <param name="map_boundary/lower_y" value="-50.0"/>
-        <param name="map_boundary/upper_y" value=" 50.0"/>
+        <remap from="~all_map"                    to="/map_provider/all_map"/>
+        <remap from="~marked_map"                 to="/map_provider/marked_map"/>
+        <remap from="~map_mesh"                   to="/map_provider/map_mesh"/>
+        <remap from="~marked_points"              to="/map_provider/marked_points"/>
 
-        <param name="obstacles/lower_w"    value="  0.6"/>
-        <param name="obstacles/upper_w"    value="  3.2"/>
-        <param name="obstacles/lower_h"    value="  1.0"/>
-        <param name="obstacles/upper_h"    value=" 10.0"/>
+        <param name="map_boundary/lower_x"        value="-15.0"        />
+        <param name="map_boundary/upper_x"        value=" 15.0"        />
+        <param name="map_boundary/lower_y"        value="-15.0"        />
+        <param name="map_boundary/upper_y"        value=" 15.0"        />
 
-        <param name="map/resolution"       value="  0.3"/>
-        <param name="map/obstacles_num"    value="  600"/>
-        <param name="map/seed"             value="  1"  />
+        <param name="obstacles/lower_w"           value="  0.6"        />
+        <param name="obstacles/upper_w"           value="  2.0"        />
+        <param name="obstacles/lower_h"           value="  1.0"        />
+        <param name="obstacles/upper_h"           value="  8.0"        />
 
-        <param name="copter/init_x"        value="-45.0"/>
-        <param name="copter/init_y"        value="-45.0"/>
-        <param name="copter/end_x"         value=" 30.0"/>
-        <param name="copter/end_y"         value=" 30.0"/>
+        <param name="map/resolution"              value="$(arg res)"   />
+        <param name="map/obstacles_num"           value="  120"        />
+        <param name="map/seed"                    value="$(arg seed)"/>
+        <param name="map/density"                 value="  0.2"        />
+
+        <param name="copter/init_x"               value="$(arg init_x)"/>
+        <param name="copter/init_y"               value="$(arg init_y)"/>
+        <param name="copter/init_z"               value="$(arg init_z)"/>
+        <param name="copter/end_x"                value="$(arg end_x)" />
+        <param name="copter/end_y"                value="$(arg end_y)" />
     </node>
 
     <node name="trajectories_comparison" type="trajectories_comparison" pkg="pointcloudTraj" output="screen">
-        <remap from="~trajectories_1"      to="/trajectories_comparison/trajectories_1"/>
-        <remap from="~trajectories_2"      to="/trajectories_comparison/trajectories_2"/>
+        <remap from="~trajectories_1"             to="/trajectories_comparison/trajectories_1"/>
+        <remap from="~trajectories_2"             to="/trajectories_comparison/trajectories_2"/>
 
-        <param name="files/trajs_1"        value="/home/galanton/catkin_ws/trajectory_bm300"/>
-        <param name="files/trajs_2"        value="/home/galanton/catkin_ws/trajectory_archive"/>
+        <param name="files/trajs_1"               value="$(arg arch_1)"/>
+        <param name="files/trajs_2"               value="$(arg arch_2)"/>
     </node>
 
     <node name="rviz" type="rviz" pkg="rviz" output="screen"

@@ -5,7 +5,7 @@ using namespace Eigen;
 using namespace std;
 
 safeRegionRrtStar::safeRegionRrtStar( ){ 
-    cach_size  = 1;
+    cach_size  = 10;
     cloud_empty = true;
 
 //    eng = default_random_engine(rd());
@@ -740,7 +740,7 @@ void safeRegionRrtStar::SafeRegionExpansion( double time_limit )
             if( !inform_status ) best_end_ptr = node_new_ptr;
             
             EndList.push_back(node_new_ptr);
-            updateHeuristicRegion(node_new_ptr);
+//            updateHeuristicRegion(node_new_ptr);
             inform_status = true;  
         }
         

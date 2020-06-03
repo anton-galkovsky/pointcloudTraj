@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
 
     ofstream fout(trajs_archive_file, ios::app);
     for (auto it : cur_traj->points) {
-        fout << it.x << " " << it.x << " " << it.x << "\n";
+        fout << it.x << " " << it.y << " " << it.z << "\n";
     }
     fout.close();
 

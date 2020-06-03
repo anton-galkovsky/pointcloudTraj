@@ -21,6 +21,8 @@ public:
 
     static double get_focal_distance(double fov_hor);
 
+    static double get_pixel_cone_angle_2(int image_width, double fov_hor);
+
 protected:
     map_observer(const std::vector<std::vector<Eigen::Vector3d>> &shapes_,
                  int img_width, int img_height, int fov_hor, double max_distance_z);
@@ -130,6 +132,8 @@ public:
     const float *render_to_img();
 
     double get_pixel_cone_angle_2();
+
+    bool is_in_cone(const Eigen::Vector3d &point);
 
     ~marked_map_observer() override;
 

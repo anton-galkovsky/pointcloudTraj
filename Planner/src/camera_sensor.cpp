@@ -20,12 +20,13 @@
 
 using namespace std;
 
-static int image_w, image_h, fov_hor, sf_img_w, sf_img_h;
-static double x_init, y_init, z_init, x_end, y_end, res, max_dist, empty_rad, safe_rad;
+static int image_w, image_h, fov_hor, sf_img_w, sf_img_h, window;
+static double x_init, y_init, z_init, x_end, y_end, res, max_dist, empty_rad, safe_rad, min_disp;
 static bool was_pos_msg, was_map_mesh_msg, was_marked_points_msg, was_global_map_msg;
+static bool is_lidar, is_rgbd, is_sim_cam, is_adj_cam;
 
-static pcl::PointCloud<pcl::PointXYZ> *known_map_pcl;
-
+static pcl::search::KdTree<pcl::PointXYZ> kd_tree;
+static pcl::PointCloud<pcl::PointXYZ> global_map_pcl, known_map_pcl;
 static vector<vector<int>> marked_point_indexes_arr;
 static vector<Eigen::Vector3d> marked_points_vec;
 static vector<vector<Eigen::Vector3d>> map_shapes;
@@ -112,7 +113,7 @@ void prepare_traj_image_msg(sensor_msgs::Image &traj_image_msg,
 
 void prepare_traj_points_msg(sensor_msgs::PointCloud2 &traj_points_msg, const std::list<Eigen::Vector3d> &points) {
     pcl::PointCloud<pcl::PointXYZ> traj_points_pcl;
-    for (const auto &p : points) {
+    for (const Eigen::Vector3d &p : points) {
         traj_points_pcl.points.emplace_back(p[0], p[1], p[2]);
     }
 
@@ -128,31 +129,80 @@ void prepare_map_scan(sensor_msgs::PointCloud2 &observed_map_msg,
                       visualization_msgs::MarkerArray &keeper_arrows_msg, visualization_msgs::Marker &safe_sphere_msg,
                       geometry_msgs::Vector3 &shift_vec_msg, std_msgs::Float64 &twirl_yaw_msg,
                       sensor_msgs::PointCloud2 &safe_points_msg, sensor_msgs::PointCloud2 &unsafe_points_msg) {
-    static double dist_stat_cur[200]{};
-    int dist_stat_cur_num[200]{};
-    double dist_stat_prev[200]{};
-    for (int i = 0; i < 200; i++) {
-        dist_stat_prev[i] = dist_stat_cur[i];
-        dist_stat_cur[i] = 0;
+    Eigen::Vector3f transl = camera_pose->translation();
+    if (is_lidar) {
+        vector<int> points_indexes;
+        vector<float> points_distances;
+        pcl::PointXYZ point;
+        point.x = (float) transl[0];
+        point.y = (float) transl[1];
+        point.z = (float) transl[2];
+        kd_tree.radiusSearch(point, max_dist, points_indexes, points_distances);
+
+        pcl::PointCloud<pcl::PointXYZ> observed_map_pcl(global_map_pcl, points_indexes);
+        prepare_observed_map_msg(observed_map_msg, observed_map_pcl);
+        return;
     }
 
     static marked_map_observer observer(marked_point_indexes_arr, marked_points_vec, map_shapes,
                                         image_w, image_h, fov_hor, max_dist);
     static double pixel_cone_angle_2 = observer.get_pixel_cone_angle_2();
-    static cone_keeper cone_keeper(empty_rad, Eigen::Vector3f(x_init, y_init, z_init),
-                                   pixel_cone_angle_2, map_observer::get_focal_distance(fov_hor), image_w, image_h);
-    static map<const Eigen::Vector3d *, int> observed_pts_filter;
+    static double focal_distance = map_observer::get_focal_distance(fov_hor);
+    static pixel_keeper pixel_keeper(window, min_disp, Eigen::Vector3f(x_init, y_init, z_init),
+                                     pixel_cone_angle_2, focal_distance, image_w, image_h);
 
     observer.set_camera_pose(*camera_pose);
-    auto transl = camera_pose->translation();
-    auto axes_x = camera_pose->rotation().col(0);
-    auto axes_y = camera_pose->rotation().col(1);
-    auto axes_z = camera_pose->rotation().col(2);
 
     auto marked_img_pts = observer.render_to_marked_img_pts();
-    cone_keeper.add_marked_img_pts(*camera_pose, move(marked_img_pts));
+    auto depth_image = observer.render_to_img();
+    prepare_image_msg(image_msg, depth_image);
+    
+    if (is_rgbd) {
+        static pcl::PointCloud<pcl::PointXYZ> observed_map_pcl(known_map_pcl);
+        for (auto it : marked_img_pts) {
+             observed_map_pcl.points.emplace_back((*get<0>(it))[0], (*get<0>(it))[1], (*get<0>(it))[2]);
+        }
+        prepare_observed_map_msg(observed_map_msg, observed_map_pcl);
+        return;
+    }
 
-    pcl::PointCloud<pcl::PointXYZ> observed_map_pcl(*known_map_pcl);
+    pcl::PointCloud<pcl::PointXYZ> observed_map_pcl(known_map_pcl);
+    if (is_sim_cam) {
+        pixel_keeper.add_marked_img_pts(*camera_pose, move(marked_img_pts));
+        auto marked_cones = pixel_keeper.get_marked_cones();
+        keeper_arrows_msg.markers.clear();
+        int id = 0;
+        for (auto it : marked_cones) {
+            double h_1 = get<2>(it.second);
+            double h_2 = get<3>(it.second);
+            double l_1 = h_1 * pixel_cone_angle_2;
+            double l_2 = h_2 * pixel_cone_angle_2;
+            Eigen::Vector3f c = get<0>(it.second);
+            Eigen::Vector3f v = get<1>(it.second);
+            Eigen::Vector3f v1 = c + v * h_1;
+            Eigen::Vector3f v2 = c + v * h_2;
+            append_marker_array_msg(v1, v2, 0, 1, 1, l_1, l_2, false, keeper_arrows_msg, id++);
+
+            double h_sim = 2 * h_1 * h_2 / (h_1 + h_2);
+            Eigen::Vector3f sim_v = c + v * h_sim;
+
+            observed_map_pcl.points.emplace_back(sim_v[0], sim_v[1], sim_v[2]);
+        }
+        prepare_observed_map_msg(observed_map_msg, observed_map_pcl);
+
+        auto depth_image = observer.render_to_img();
+        prepare_image_msg(image_msg, depth_image);
+        return;
+    }
+
+
+    static cone_keeper cone_keeper(empty_rad, Eigen::Vector3f(x_init, y_init, z_init),
+                                   pixel_cone_angle_2, focal_distance, image_w, image_h);
+    static map<const Eigen::Vector3d *, int> observed_pts_filter;
+    Eigen::Vector3f axes_x = camera_pose->rotation().col(0);
+    Eigen::Vector3f axes_y = camera_pose->rotation().col(1);
+    Eigen::Vector3f axes_z = camera_pose->rotation().col(2);
+    cone_keeper.add_marked_img_pts(*camera_pose, move(marked_img_pts));
     auto marked_cones = cone_keeper.get_marked_cones();
     keeper_arrows_msg.markers.clear();
     int id = 0;
@@ -168,35 +218,33 @@ void prepare_map_scan(sensor_msgs::PointCloud2 &observed_map_msg,
         Eigen::Vector3f v1 = c + v * h_1;
         Eigen::Vector3f v2 = c + v * h_2;
         append_marker_array_msg(v1, v2, 0, 1, 1, l_1, l_2, false, keeper_arrows_msg, id++);
+        Eigen::Vector3f v1_delta = v1 - transl;
 
         auto filter_it = observed_pts_filter.insert({it.first, 0}).first;
         filter_it->second++;
-        if (filter_it->second >= 2) {
+        if (filter_it->second >= 3) {
             double h_sim = 2 * h_1 * h_2 / (h_1 + h_2);
             Eigen::Vector3f sim_v = c + v * h_sim;
+            if ((sim_v - transl).norm() <= safe_rad * 1.5) {
+                sim_v = c + v * (h_1 * 0.7 + h_2 * 0.3);
+            }
             observed_map_pcl.points.emplace_back(sim_v[0], sim_v[1], sim_v[2]);
 
-            double pos_dist = (sim_v - transl).norm();
-            int dist_index = (int) round(min(pos_dist, 19.9) / 0.1);
-            dist_stat_cur[dist_index] += h_2 - h_1;
-            dist_stat_cur_num[dist_index]++;
-
-            double safe_dist = (v1 - transl).norm();
+            double safe_dist = v1_delta.norm();
             if (safe_dist < safe_rad) {
                 valid_shift = true;
             }
+        }
 
-
-            Eigen::Vector3f shift_dir = (v1 - transl).normalized().cross(axes_z);
+        if (observer.is_in_cone(v1_delta.cast<double>())) {
+            Eigen::Vector3f shift_dir = v1_delta.normalized().cross(axes_z);
             double shift_dir_norm = shift_dir.norm();
-            if (shift_dir_norm < 0.01) {
+            if (shift_dir_norm < 0.0001) {
                 continue;
             }
-            double shift_dir_coef = pow(1 - shift_dir_norm, 2);
-            double angle = atan2(-shift_dir.dot(axes_y), shift_dir.dot(axes_x));
-            angle += M_PI;
-            int dir_ind = max(min((int) (angle / (M_PI / 36)), 35), 0);
-            shift_dirs[dir_ind] += shift_dir_coef * max(h_2 - h_1, 1.0) / safe_dist;
+            double angle = atan2(-shift_dir.dot(axes_y), shift_dir.dot(axes_x)) + M_PI;
+            int dir_ind = max(min((int) (angle / (2 * M_PI / 36)), 35), 0);
+            shift_dirs[dir_ind] += pow(1 - shift_dir_norm, 2) * max(h_2 - h_1, 5.0) / pow(v1_delta.norm(), 2);
             shift_dirs_num[dir_ind]++;
         }
     }
@@ -206,22 +254,10 @@ void prepare_map_scan(sensor_msgs::PointCloud2 &observed_map_msg,
         }
     }
 
-    ofstream fout("/home/galanton/catkin_ws/stat", ios::app);
-    for (int i = 0; i < 200; i++) {
-        fout.width(6);
-        fout.precision(2);
-        fout << dist_stat_prev[i] - dist_stat_cur[i] / dist_stat_cur_num[i];
-    }
-    fout << "\n";
-    fout.close();
-
     double safe_radius = cone_keeper.get_safe_radius();
     prepare_safe_sphere_msg(safe_sphere_msg, safe_radius, transl);
 
     prepare_observed_map_msg(observed_map_msg, observed_map_pcl);
-
-    auto depth_image = observer.render_to_img();
-    prepare_image_msg(image_msg, depth_image);
 
     auto cur_depth_image = cone_keeper.get_cur_depth_image();
     auto new_image_info = safety_ctrlr->add_image(*camera_pose, cur_depth_image);
@@ -232,21 +268,23 @@ void prepare_map_scan(sensor_msgs::PointCloud2 &observed_map_msg,
 
 
     double dir_max = 0;
+    double dir_sum = 0;
     int dir_max_ind = 0;
     for (int i = 0; i < 18; i++) {
         if (shift_dirs[i] + shift_dirs[i + 18] > dir_max) {
             dir_max = shift_dirs[i] + shift_dirs[i + 18];
             dir_max_ind = i;
         }
+        dir_sum += shift_dirs[i] + shift_dirs[i + 18];
     }
-//    cout << "dir_max ================================= " << dir_max << endl;
-//    if (dir_max > 30) {
-//        valid_shift = true;
-//    }
+
+    if (dir_max > 100 || dir_sum > 100 * 1.5) {
+        valid_shift = true;
+    }
     if (valid_shift) {
         double angle = dir_max_ind * M_PI / 36 - M_PI;
         Eigen::Vector3f v = axes_x * cos(angle) - axes_y * sin(angle);
-        v *= min(dir_max / 30, 1.0) + 1.0;
+        v *= max(dir_max / 100, 1.0);
         shift_vec_msg.x = v[0];
         shift_vec_msg.y = v[1];
         shift_vec_msg.z = v[2];
@@ -289,7 +327,7 @@ void map_mesh_callback(const pcl_msgs::PolygonMesh &polygon_mesh_msg) {
     pcl::PointCloud<pcl::PointXYZ> map_mesh_pcl;
     pcl::fromROSMsg(polygon_mesh_msg.cloud, map_mesh_pcl);
 
-    for (const auto& polygon_indexes : polygon_mesh_msg.polygons) {
+    for (const auto &polygon_indexes : polygon_mesh_msg.polygons) {
         vector<Eigen::Vector3d> shape;
         for (int index : polygon_indexes.vertices) {
             pcl::PointXYZ &point = map_mesh_pcl[index];
@@ -312,7 +350,7 @@ void marked_points_callback(const pcl_msgs::PolygonMesh &polygon_mesh_msg) {
         marked_points_vec.emplace_back(point.x, point.y, point.z);
     }
 
-    for (const auto& polygon_indexes : polygon_mesh_msg.polygons) {
+    for (const auto &polygon_indexes : polygon_mesh_msg.polygons) {
         vector<int> point_indexes;
         for (int index : polygon_indexes.vertices) {
             point_indexes.push_back(index);
@@ -349,10 +387,8 @@ void all_map_callback(const sensor_msgs::PointCloud2 &global_map_msg) {
     }
     was_global_map_msg = true;
 
-    pcl::PointCloud<pcl::PointXYZ> global_map_pcl;
     pcl::fromROSMsg(global_map_msg, global_map_pcl);
 
-    pcl::search::KdTree<pcl::PointXYZ> kd_tree;
     vector<int> points_indexes;
     vector<float> points_distances;
     pcl::PointXYZ point;
@@ -362,7 +398,7 @@ void all_map_callback(const sensor_msgs::PointCloud2 &global_map_msg) {
     kd_tree.setInputCloud(global_map_pcl.makeShared());
     kd_tree.radiusSearch(point, empty_rad, points_indexes, points_distances);
 
-    known_map_pcl = new pcl::PointCloud<pcl::PointXYZ>(global_map_pcl, points_indexes);
+    known_map_pcl = pcl::PointCloud<pcl::PointXYZ>(global_map_pcl, points_indexes);
 }
 
 int main(int argc, char **argv) {
@@ -387,31 +423,45 @@ int main(int argc, char **argv) {
 
     double s_rate;
     int buf_size;
+    bool adjustable;
+    string sens_type;
 
-    node_handle.param("traj/safe_rad",     safe_rad,   1.0);
+    node_handle.param("traj/safe_rad",      safe_rad,   1.0);
+    node_handle.param("traj/adjustable",    adjustable, true);
 
-    node_handle.param("map/resolution",    res,        0.3);
-    node_handle.param("map/empty_rad",     empty_rad,  1.0);
+    node_handle.param("map/resolution",     res,        0.3);
+    node_handle.param("map/empty_rad",      empty_rad,  1.0);
 
-    node_handle.param("camera/sense_rate", s_rate,     3.0);
-    node_handle.param("camera/width",      image_w,    320);
-    node_handle.param("camera/height",     image_h,    240);
-    node_handle.param("camera/fov_hor",    fov_hor,    90);
-    node_handle.param("camera/max_dist",   max_dist,  30.0);
+    node_handle.param("camera/sense_rate",  s_rate,     3.0);
+    node_handle.param("camera/width",       image_w,    320);
+    node_handle.param("camera/height",      image_h,    240);
+    node_handle.param("camera/fov_hor",     fov_hor,    90);
+    node_handle.param("camera/max_dist",    max_dist,  30.0);
+    node_handle.param("camera/min_disp",    min_disp,   5.0);
+    node_handle.param("camera/window",      window,     5);
+    node_handle.param("camera/sensor_type", sens_type,  string("camera"));
 
-    node_handle.param("safety/img_width",  sf_img_w,   120);
-    node_handle.param("safety/img_height", sf_img_h,   90);
-    node_handle.param("safety/buf_size",   buf_size,   50);
+    node_handle.param("safety/img_width",   sf_img_w,   120);
+    node_handle.param("safety/img_height",  sf_img_h,   90);
+    node_handle.param("safety/buf_size",    buf_size,   50);
 
-    node_handle.param("copter/init_x",     x_init,   -45.0);
-    node_handle.param("copter/init_y",     y_init,   -45.0);
-    node_handle.param("copter/init_z",     z_init,     2.0);
-    node_handle.param("copter/end_x",      x_end,     30.0);
-    node_handle.param("copter/end_y",      y_end,     30.0);
+    node_handle.param("copter/init_x",      x_init,   -45.0);
+    node_handle.param("copter/init_y",      y_init,   -45.0);
+    node_handle.param("copter/init_z",      z_init,     2.0);
+    node_handle.param("copter/end_x",       x_end,     30.0);
+    node_handle.param("copter/end_y",       y_end,     30.0);
 
 //    ros::Rate rt(1);
 //    for (int i = 0; i < 10 && ros::ok(); i++)
 //        rt.sleep();
+
+    is_lidar   = (sens_type == "lidar");
+    is_rgbd    = (sens_type == "rgbd");
+    is_sim_cam = (sens_type == "camera") && !adjustable;
+    is_adj_cam = (sens_type == "camera") && adjustable;
+    if (is_adj_cam) {
+        min_disp = -1;
+    }
 
     was_pos_msg = false;
     was_map_mesh_msg = false;
@@ -421,21 +471,12 @@ int main(int argc, char **argv) {
     valid_shift = false;
     valid_twirl = false;
 
-    ofstream fout("/home/galanton/catkin_ws/stat");
-    for (int i = 0; i < 200; i++) {
-        fout.width(6);
-        fout.precision(2);
-        fout << i * 0.1;
-    }
-    fout << "\n\n";
-    fout.close();
-
     camera_pose = new Eigen::Affine3f();
     Eigen::Vector3f translation(x_init, y_init, z_init);
     camera_pose->translate(translation);
 
-    safety_ctrlr = new safety_controller(sf_img_w, sf_img_h, buf_size,
-                                         map_observer::get_focal_distance(fov_hor), image_w, image_h);
+    double focal_distance = map_observer::get_focal_distance(fov_hor);
+    safety_ctrlr = new safety_controller(sf_img_w, sf_img_h, buf_size, focal_distance, image_w, image_h);
 
     sensor_msgs::PointCloud2 observed_map_msg, safe_points_msg, unsafe_points_msg;
     sensor_msgs::Image image_msg, traj_image_msg;
@@ -459,12 +500,12 @@ int main(int argc, char **argv) {
         safe_sphere_pub.publish(safe_sphere_msg);
         unsafe_points_pub.publish(unsafe_points_msg);
         safe_points_pub.publish(safe_points_msg);
-        if (valid_shift) {
+        if (valid_shift && is_adj_cam) {
             shift_cmd_pub.publish(shift_vec_msg);
             valid_shift = false;
 //            ROS_WARN("[Camera] Send shift cmd");
         }
-        if (valid_twirl) {
+        if (valid_twirl && is_adj_cam) {
             twirl_cmd_pub.publish(twirl_yaw_msg);
             valid_twirl = false;
 //            ROS_WARN("[Camera] Send twirl cmd");

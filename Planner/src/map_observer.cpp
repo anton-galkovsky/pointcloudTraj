@@ -157,6 +157,13 @@ void marked_map_observer::save_point(int x, int y, double d, shape_ptr_type shap
     }
 }
 
+bool marked_map_observer::is_in_cone(const Eigen::Vector3d &point) {
+    return point.dot(cone_normals[0]) > 0.01 &&
+           point.dot(cone_normals[1]) > 0.01 &&
+           point.dot(cone_normals[2]) > 0.01 &&
+           point.dot(cone_normals[3]) > 0.01;
+}
+
 void marked_map_observer::operate_marked(int shape_idx) {
     auto normal = shapes[shape_idx].normal;
     const auto &marked_point_indexes = marked_point_indexes_arr[shape_idx];
@@ -199,6 +206,10 @@ void map_observer::operate_marked(int) {
 
 double map_observer::get_focal_distance(double fov_hor) {
     return 0.5 / tan(fov_hor / 2.0 * M_PI / 180);
+}
+
+double map_observer::get_pixel_cone_angle_2(int img_width, double fov_hor) {
+    return 1 / (sqrt(2) * img_width * map_observer::get_focal_distance(fov_hor));
 }
 
 inline double intermediate_distance(int i, int n, double v0_dist, double v1_dist) {

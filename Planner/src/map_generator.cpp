@@ -33,8 +33,8 @@ void map_generator::generate_map() {
         w = random_w(engine);
         h = random_h(engine);
 
-        if (pow(x - x_init, 2) + pow(y - y_init, 2) < 4
-            || pow(x - x_end, 2) + pow(y - y_end, 2) < 4) {
+        if (pow(x - x_init, 2) + pow(y - y_init, 2) < 2 + w * w
+            || pow(x - x_end, 2) + pow(y - y_end, 2) < 2 + w * w) {
             continue;
         }
         bool ok = true;
